@@ -1,0 +1,48 @@
+schema_version: "1.0"
+
+canonical_trajectory:
+  fields:
+    - x
+    - y
+    - yaw
+    - velocity
+    - acceleration
+    - curvature
+
+  dtype: float32
+  include_current_state: true
+
+planner_output:
+  fields:
+    - x
+    - y
+    - yaw
+    - velocity
+
+  dtype: float32
+  include_current_state: false
+  num_future_points: 8
+  dt: 0.5
+
+mpc_reference:
+  fields:
+    - x
+    - y
+    - yaw
+    - velocity
+
+  dtype: float64
+  include_current_state: true
+  num_state_points: 16
+  dt: 0.2
+
+angle:
+  wrap_range: [-3.141592653589793, 3.141592653589793]
+  unwrap_before_interpolation: true
+
+resampling:
+  position: cubic
+  yaw: unwrap_linear
+  velocity: linear
+  acceleration: recompute
+  curvature: recompute

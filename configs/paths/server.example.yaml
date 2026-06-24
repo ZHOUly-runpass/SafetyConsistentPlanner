@@ -1,0 +1,15 @@
+schema_version: "1.0"
+
+paths:
+  repo_root: /home/user/workspace/03_SafetyConsistentPlanner_Workshop
+  configs: /home/user/workspace/03_SafetyConsistentPlanner_Workshop/configs
+  src: /home/user/workspace/03_SafetyConsistentPlanner_Workshop/src
+  data: /data/nuplan/v1.1
+  maps: /data/nuplan/maps
+  checkpoints: /home/user/workspace/03_SafetyConsistentPlanner_Workshop/outputs/checkpoints
+  logs: /home/user/workspace/03_SafetyConsistentPlanner_Workshop/outputs/logs
+
+environment:
+  python: python3.10
+  conda_env: safety_planner
+  cuda_version: "12.1"

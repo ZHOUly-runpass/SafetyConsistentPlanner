@@ -1,0 +1,12 @@
+schema_version: "1.0"
+
+paths:
+  repo_root: D:/E2Eproject_MPC/03_SafetyConsistentPlanner_Workshop
+  configs: D:/E2Eproject_MPC/03_SafetyConsistentPlanner_Workshop/configs
+  src: D:/E2Eproject_MPC/03_SafetyConsistentPlanner_Workshop/src
+  tests: D:/E2Eproject_MPC/03_SafetyConsistentPlanner_Workshop/tests
+  outputs: D:/E2Eproject_MPC/03_SafetyConsistentPlanner_Workshop/outputs
+
+upstream:
+  pair_drive: D:/E2Eproject_MPC/01_PaIR-Drive_Upstream
+  ros2_dcbf_mpc: D:/E2Eproject_MPC/02_Ros2_D-CBF-MPC_Baseline

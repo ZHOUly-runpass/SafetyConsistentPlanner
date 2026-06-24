@@ -1,0 +1,14 @@
+schema_version: "1.0"
+
+dcbf:
+  gamma: 0.1
+  safe_distance: 1.0
+  ellipse_inflation: 0.3
+  max_slack: 100.0
+
+slack_penalty:
+  weight: 1000.0
+
+obstacle:
+  type: ellipse
+  num_obstacles_max: 32

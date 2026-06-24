@@ -1,0 +1,160 @@
+﻿============================================================
+ROS2 D-CBF-MPC BASELINE INVENTORY
+Generated: 2026-06-14 11:32:27
+Repository: D:\E2Eproject_MPC\02_Ros2_D-CBF-MPC_Baseline
+Commit: 275007927510650709f67bcfc6f4f5aec6f8a1dd
+============================================================
+
+--- Git Status ---
+On branch main
+Your branch is up to date with 'origin/main'.
+
+nothing to commit, working tree clean
+
+--- Git Remote ---
+origin	https://github.com/YSU-NavPilotHub/Ros2_D-CBF-MPC.git (fetch)
+origin	https://github.com/YSU-NavPilotHub/Ros2_D-CBF-MPC.git (push)
+
+--- Latest Commit ---
+commit 275007927510650709f67bcfc6f4f5aec6f8a1dd (HEAD -> main, origin/main, origin/HEAD)
+Author: Li Yibo <92833757+AaoGui@users.noreply.github.com>
+Date:   Fri May 15 16:45:54 2026 +0800
+
+    Update md.
+
+ README.md | 18 ------------------
+ 1 file changed, 18 deletions(-)
+
+--- Top-Level Files ---
+
+Mode   Name       FullName                                               
+----   ----       --------                                               
+d----- src        D:\E2Eproject_MPC\02_Ros2_D-CBF-MPC_Baseline\src       
+-a---- .gitignore D:\E2Eproject_MPC\02_Ros2_D-CBF-MPC_Baseline\.gitignore
+-a---- README.md  D:\E2Eproject_MPC\02_Ros2_D-CBF-MPC_Baseline\README.md 
+
+
+
+
+--- ROS2 Packages and Important Files ---
+README.md
+src\global_path_publisher\CMakeLists.txt
+src\global_path_publisher\config\config.yaml
+src\global_path_publisher\launch\global_path_publisher.launch.py
+src\global_path_publisher\package.xml
+src\global_planner\CMakeLists.txt
+src\global_planner\config\config.yaml
+src\global_planner\launch\global_path_publisher.launch.py
+src\global_planner\package.xml
+src\grid_map_cmake_helpers\CMakeLists.txt
+src\grid_map_cmake_helpers\package.xml
+src\grid_map_rviz_plugin\CMakeLists.txt
+src\grid_map_rviz_plugin\package.xml
+src\linear_path_publisher\CMakeLists.txt
+src\linear_path_publisher\launch\linear_path_publisher.launch.py
+src\linear_path_publisher\package.xml
+src\local_map\CMakeLists.txt
+src\local_map\config\config.yaml
+src\local_map\package.xml
+src\local_planner\config\config.yaml
+src\local_planner\package.xml
+src\local_planner\setup.cfg
+src\local_planner\setup.py
+src\obs_param\CMakeLists.txt
+src\obs_param\package.xml
+src\samplelaunch\launch\local_map.launch.py
+src\samplelaunch\package.xml
+src\samplelaunch\setup.cfg
+src\samplelaunch\setup.py
+src\scene\CMakeLists.txt
+src\scene\config\config.yaml
+src\scene\launch\core_smoke.launch.py
+src\scene\launch\move_test.launch.py
+src\scene\launch\sim.launch.py
+src\scene\launch\start.launch.py
+src\scene\launch\start_backup.launch.py
+src\scene\package.xml
+src\turtlebot3_velodyne_Gazebo\README.md
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\README.md
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\CMakeLists.txt
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\launch\empty_world.launch.py
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\launch\robot_state_publisher.launch.py
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\launch\spawn_turtlebot3.launch.py
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\launch\turtlebot3_dqn_stage1.launch.py
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\launch\turtlebot3_dqn_stage2.launch.py
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\launch\turtlebot3_dqn_stage3.launch.py
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\launch\turtlebot3_dqn_stage4.launch.py
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\launch\turtlebot3_house.launch.py
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\launch\turtlebot3_world.launch.py
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\models\turtlebot3_dqn_world\obstacle_plugin\CMakeLists.txt
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\package.xml
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_simulations\CMakeLists.txt
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_simulations\package.xml
+src\turtlebot3_velodyne_Gazebo\velodyne_simulator\bitbucket-pipelines.yml
+src\turtlebot3_velodyne_Gazebo\velodyne_simulator\README.md
+src\turtlebot3_velodyne_Gazebo\velodyne_simulator\velodyne_description\CMakeLists.txt
+src\turtlebot3_velodyne_Gazebo\velodyne_simulator\velodyne_description\launch\example.launch.py
+src\turtlebot3_velodyne_Gazebo\velodyne_simulator\velodyne_description\package.xml
+src\turtlebot3_velodyne_Gazebo\velodyne_simulator\velodyne_gazebo_plugins\CMakeLists.txt
+src\turtlebot3_velodyne_Gazebo\velodyne_simulator\velodyne_gazebo_plugins\package.xml
+src\turtlebot3_velodyne_Gazebo\velodyne_simulator\velodyne_simulator\CMakeLists.txt
+src\turtlebot3_velodyne_Gazebo\velodyne_simulator\velodyne_simulator\package.xml
+
+--- Source Files ---
+src\global_path_publisher\launch\global_path_publisher.launch.py
+src\global_path_publisher\src\global_path_publisher.cpp
+src\global_planner\launch\global_path_publisher.launch.py
+src\global_planner\src\global_path_publisher.cpp
+src\grid_map_rviz_plugin\include\grid_map_rviz_plugin\GridMapDisplay.hpp
+src\grid_map_rviz_plugin\include\grid_map_rviz_plugin\GridMapVisual.hpp
+src\grid_map_rviz_plugin\src\GridMapDisplay.cpp
+src\grid_map_rviz_plugin\src\GridMapVisual.cpp
+src\linear_path_publisher\launch\linear_path_publisher.launch.py
+src\linear_path_publisher\src\linear_path_publisher.cpp
+src\local_map\include\DBSCAN.hpp
+src\local_map\include\ellipse.hpp
+src\local_map\include\KM.hpp
+src\local_map\include\third_party\Hungarian.hpp
+src\local_map\src\local_map.cpp
+src\local_map\src\tf_listen.cpp
+src\local_planner\launch\local_planner_launch.py
+src\local_planner\local_planner\__init__.py
+src\local_planner\local_planner\controller.py
+src\local_planner\local_planner\local_planner.py
+src\local_planner\local_planner\usage_casadi.py
+src\local_planner\setup.py
+src\obs_param\include\kalman.h
+src\obs_param\src\kalman.cpp
+src\obs_param\src\obs_kf.cpp
+src\samplelaunch\launch\local_map.launch.py
+src\samplelaunch\samplelaunch\__init__.py
+src\samplelaunch\setup.py
+src\samplelaunch\test\test_copyright.py
+src\samplelaunch\test\test_flake8.py
+src\samplelaunch\test\test_pep257.py
+src\scene\include\moving_cylinder.hpp
+src\scene\launch\core_smoke.launch.py
+src\scene\launch\move_test.launch.py
+src\scene\launch\sim.launch.py
+src\scene\launch\start.launch.py
+src\scene\launch\start_backup.launch.py
+src\scene\src\move_test.cpp
+src\scene\src\odom_tf.cpp
+src\scene\src\pseudo_odom.cpp
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\include\turtlebot3_gazebo\turtlebot3_drive.hpp
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\launch\empty_world.launch.py
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\launch\robot_state_publisher.launch.py
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\launch\spawn_turtlebot3.launch.py
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\launch\turtlebot3_dqn_stage1.launch.py
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\launch\turtlebot3_dqn_stage2.launch.py
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\launch\turtlebot3_dqn_stage3.launch.py
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\launch\turtlebot3_dqn_stage4.launch.py
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\launch\turtlebot3_house.launch.py
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\launch\turtlebot3_world.launch.py
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\models\turtlebot3_dqn_world\obstacle_plugin\obstacle1.cc
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\models\turtlebot3_dqn_world\obstacle_plugin\obstacle2.cc
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\models\turtlebot3_dqn_world\obstacle_plugin\obstacles.cc
+src\turtlebot3_velodyne_Gazebo\turtlebot3_simulations\turtlebot3_gazebo\src\turtlebot3_drive.cpp
+src\turtlebot3_velodyne_Gazebo\velodyne_simulator\velodyne_description\launch\example.launch.py
+src\turtlebot3_velodyne_Gazebo\velodyne_simulator\velodyne_gazebo_plugins\include\velodyne_gazebo_plugins\GazeboRosVelodyneLaser.hpp
+src\turtlebot3_velodyne_Gazebo\velodyne_simulator\velodyne_gazebo_plugins\src\GazeboRosVelodyneLaser.cpp

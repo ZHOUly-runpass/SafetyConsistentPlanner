@@ -1,0 +1,22 @@
+schema_version: "1.0"
+
+solver:
+  backend: casadi
+  nlp_solver: ipopt
+
+ipopt:
+  tol: 1.0e-4
+  max_iter: 500
+  acceptable_tol: 1.0e-3
+  acceptable_iter: 20
+  warm_start_init_point: true
+  print_level: 0
+  linear_solver: mumps
+  hessian_approximation: limited-memory
+
+casadi:
+  expand: true
+  jit: false
+
+timeouts:
+  solve_ms: 200

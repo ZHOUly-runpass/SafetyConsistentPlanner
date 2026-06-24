@@ -1,0 +1,3085 @@
+﻿============================================================
+ROS2 D-CBF-MPC CORE SOURCE REVIEW
+Generated: 2026-06-14 11:35:39
+Repository: D:\E2Eproject_MPC\02_Ros2_D-CBF-MPC_Baseline
+Commit: 275007927510650709f67bcfc6f4f5aec6f8a1dd
+============================================================
+
+
+============================================================
+FILE: README.md
+============================================================
+    1: # D-CBF MPC Planner ROS2 Humble
+    2: 
+    3: A ROS2 Humble workspace port of the original ROS1 **MPC-D-CBF** planner.
+    4: 
+    5: - Original ROS1 project: <https://github.com/jianzhuozhuTHU/MPC-D-CBF>
+    6: - Paper: <https://arxiv.org/abs/2209.08539>
+    7: - Target platform: **Ubuntu 22.04 + ROS2 Humble + Gazebo Classic 11**
+    8: 
+    9: This repository preserves the paper/project pipeline: global path generation, local lidar map construction, obstacle ellipse fitting, Kalman prediction, and MPC with D-CBF obstacle constraints.
+   10: 
+   11: ## What is included
+   12: 
+   13: ```text
+   14: src/
+   15:   global_path_publisher/       Fixed straight-line /global_path publisher
+   16:   linear_path_publisher/       Goal-driven /global_path publisher from /goal_pose
+   17:   local_map/                   PointCloud2 -> grid map -> obstacle ellipses
+   18:   obs_param/                   Kalman prediction for obstacle ellipses
+   19:   local_planner/               CasADi/IPOPT MPC + D-CBF planner and controller
+   20:   scene/                       Gazebo/RViz launch files and moving cylinder helpers
+   21:   grid_map_cmake_helpers/      Vendored grid_map CMake helper package
+   22:   grid_map_rviz_plugin/        Vendored RViz2 grid map display plugin
+   23:   turtlebot3_velodyne_Gazebo/  Vendored TurtleBot3 + Velodyne Gazebo assets
+   24: ```
+   25: 
+   26: The default full simulation uses `scene/worlds/world1.world`, which contains `cylinder_0` through `cylinder_4`. All five cylinders are configured to move through `scene/config/config.yaml`.
+   27: 
+   28: ## Dependencies
+   29: 
+   30: Install ROS2 Humble first, then install common dependencies:
+   31: 
+   32: ```bash
+   33: sudo apt update
+   34: sudo apt install -y \
+   35:   python3-colcon-common-extensions \
+   36:   python3-rosdep \
+   37:   ros-humble-gazebo-ros-pkgs \
+   38:   ros-humble-rviz2 \
+   39:   ros-humble-pcl-ros \
+   40:   ros-humble-tf2-geometry-msgs \
+   41:   libeigen3-dev \
+   42:   libpcl-dev \
+   43:   libcgal-dev
+   44: ```
+   45: 
+   46: Initialize rosdep if needed:
+   47: 
+   48: ```bash
+   49: sudo rosdep init || true
+   50: rosdep update
+   51: ```
+   52: 
+   53: Install package dependencies from the workspace root:
+   54: 
+   55: ```bash
+   56: cd ~/DCBF_MPC_Planner_ROS2_GitHub
+   57: source /opt/ros/humble/setup.bash
+   58: rosdep install --from-paths src --ignore-src --rosdistro humble -y
+   59: ```
+   60: 
+   61: Install CasADi for the Python MPC solver:
+   62: 
+   63: ```bash
+   64: python3 -m pip install --user casadi
+   65: ```
+   66: 
+   67: ## Build
+   68: 
+   69: ```bash
+   70: cd ~/DCBF_MPC_Planner_ROS2_GitHub
+   71: source /opt/ros/humble/setup.bash
+   72: colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
+   73: source install/setup.bash
+   74: ```
+   75: 
+   76: ## Core smoke test without Gazebo
+   77: 
+   78: This starts the core planning graph without Gazebo/RViz. It is useful for checking the MPC/D-CBF nodes independently of simulator resources.
+   79: 
+   80: ```bash
+   81: cd ~/DCBF_MPC_Planner_ROS2_GitHub
+   82: source /opt/ros/humble/setup.bash
+   83: source install/setup.bash
+   84: ros2 launch scene core_smoke.launch.py use_sim_time:=false launch_local_map:=false
+   85: ```
+   86: 
+   87: With a synthetic predicted obstacle stream:
+   88: 
+   89: ```bash
+   90: ros2 launch scene core_smoke.launch.py \
+   91:   use_sim_time:=false \
+   92:   launch_local_map:=false \
+   93:   publish_synthetic_obstacle:=true
+   94: ```
+   95: 
+   96: Useful checks in another terminal:
+   97: 
+   98: ```bash
+   99: source /opt/ros/humble/setup.bash
+  100: source ~/DCBF_MPC_Planner_ROS2_GitHub/install/setup.bash
+  101: ros2 topic list | grep -E '/global_path|/local_plan|/cmd_vel|/curr_state|/obs_predict_pub'
+  102: ros2 topic echo /cmd_vel --once
+  103: ```
+  104: 
+  105: ## Full Gazebo simulation
+  106: 
+  107: Start Gazebo, TurtleBot3 Velodyne, moving cylinders, local mapping, obstacle prediction, MPC/D-CBF planner, controller, and RViz:
+  108: 
+  109: ```bash
+  110: cd ~/DCBF_MPC_Planner_ROS2_GitHub
+  111: source /opt/ros/humble/setup.bash
+  112: source install/setup.bash
+  113: ros2 launch scene sim.launch.py launch_local_planner:=true
+  114: ```
+  115: 
+  116: Headless mode without Gazebo GUI or RViz:
+  117: 
+  118: ```bash
+  119: ros2 launch scene sim.launch.py gui:=false rviz:=false launch_local_planner:=true
+  120: ```
+  121: 
+  122: The robot does **not** move until a target is provided on `/goal_pose`.
+  123: 
+  124: In RViz, use **2D Goal Pose**. From a terminal, publish a simple forward goal:
+  125: 
+  126: ```bash
+  127: ros2 topic pub --once /goal_pose geometry_msgs/msg/PoseStamped \
+  128:   "{header: {frame_id: 'world'}, pose: {position: {x: 3.0, y: 0.0, z: 0.0}, orientation: {w: 1.0}}}"
+  129: ```
+  130: 
+  131: Useful motion checks:
+  132: 
+  133: ```bash
+  134: ros2 topic echo /global_path --once
+  135: ros2 topic echo /local_plan --once
+  136: ros2 topic echo /cmd_vel --once
+  137: ros2 topic echo /gazebo/model_states --once
+  138: ```
+  139: 
+  140: ### Notes
+  141: 
+  142: - Use `scene sim.launch.py` for the complete project. `scene start_backup.launch.py` is only a Gazebo world launcher and does not start the planner/controller or moving-cylinder helper.
+  143: - TurtleBot3's Gazebo diff-drive plugin already publishes `odom -> base_footprint`; keep `enable_odom_tf` at its default `false` unless you intentionally replace that TF path.
+  144: - `local_planner/config/config.yaml` uses `safe_dist: 0.5` for TurtleBot3/Gazebo feasibility. If you increase it, verify that IPOPT still finds feasible solutions and that obstacle clearance remains acceptable.
+  145: - `scene/config/config.yaml` sets `cylinder_num: 5`, so `cylinder_0` through `cylinder_4` move in the default `world1.world` scene.
+  146: 
+  147: ## Main topic contract
+  148: 
+  149: | Topic | Message | Producer | Consumer |
+  150: | --- | --- | --- | --- |
+  151: | `/goal_pose` | `geometry_msgs/msg/PoseStamped` | RViz / user | `linear_path_publisher` |
+  152: | `/global_path` | `nav_msgs/msg/Path` | `global_path_publisher` or `linear_path_publisher` | `local_planner` |
+  153: | `/velodyne_points` | `sensor_msgs/msg/PointCloud2` | Gazebo Velodyne | `local_map` |
+  154: | `/for_obs_track` | `std_msgs/msg/Float32MultiArray` | `local_map` | `obs_param` |
+  155: | `/obs_predict_pub` | `std_msgs/msg/Float32MultiArray` | `obs_param` | `local_planner` |
+  156: | `/curr_state` | `std_msgs/msg/Float32MultiArray` | `controller` | `local_planner` |
+  157: | `/local_plan` | `std_msgs/msg/Float32MultiArray` | `local_planner` | `controller` |
+  158: | `/cmd_vel` | `geometry_msgs/msg/Twist` | `controller` | TurtleBot3 diff-drive plugin |
+  159: | `/cmd_move` | `std_msgs/msg/Bool` | `local_planner` | moving cylinder helper |
+  160: 
+  161: ## Verification performed before packaging
+  162: 
+  163: The following checks passed on the development machine:
+  164: 
+  165: ```bash
+  166: source /opt/ros/humble/setup.bash
+  167: colcon build --symlink-install
+  168: colcon test --packages-select linear_path_publisher local_planner scene
+  169: colcon test-result --verbose
+  170: ```
+  171: 
+  172: Runtime checks performed:
+  173: 
+  174: - Core smoke launch with and without synthetic obstacle input.
+  175: - Full headless Gazebo launch.
+  176: - Published `/goal_pose` at `(3.0, 0.0)` and observed TurtleBot3 motion to approximately `(2.9999, -0.0013)`.
+  177: - Verified `/global_path` ended at `(3.0, 0.0)`.
+  178: - Verified `/local_plan` and `/cmd_vel` became non-zero.
+  179: - Verified all five default cylinders moved in `/gazebo/model_states`.
+  180: 
+  181: ## License / attribution
+  182: 
+  183: This is a ROS2 Humble port derived from the upstream MPC-D-CBF ROS1 project and uses vendored third-party ROS/Gazebo packages. Before publishing publicly, review the upstream repositories' licenses and retain their copyright/license notices.
+
+============================================================
+FILE: src\local_planner\package.xml
+============================================================
+    1: <?xml version="1.0"?>
+    2: <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+    3: <package format="3">
+    4:   <name>local_planner</name>
+    5:   <version>0.0.0</version>
+    6:   <description>TODO: Package description</description>
+    7:   <maintainer email="c@todo.todo">c</maintainer>
+    8:   <license>Apache-2.0</license>
+    9: 
+   10:   <buildtool_depend>ament_python</buildtool_depend>
+   11: 
+   12:   <exec_depend>ament_index_python</exec_depend>
+   13:   <exec_depend>geometry_msgs</exec_depend>
+   14:   <exec_depend>launch</exec_depend>
+   15:   <exec_depend>launch_ros</exec_depend>
+   16:   <exec_depend>nav_msgs</exec_depend>
+   17:   <exec_depend>python3-matplotlib</exec_depend>
+   18:   <exec_depend>python3-numpy</exec_depend>
+   19:   <exec_depend>rclpy</exec_depend>
+   20:   <exec_depend>std_msgs</exec_depend>
+   21:   <exec_depend>tf2_ros</exec_depend>
+   22:   <exec_depend>visualization_msgs</exec_depend>
+   23: 
+   24:   <test_depend>ament_copyright</test_depend>
+   25:   <test_depend>ament_flake8</test_depend>
+   26:   <test_depend>ament_pep257</test_depend>
+   27:   <test_depend>python3-pytest</test_depend>
+   28: 
+   29:   <export>
+   30:     <build_type>ament_python</build_type>
+   31:   </export>
+   32: </package>
+
+============================================================
+FILE: src\local_planner\setup.py
+============================================================
+    1: import os
+    2: from glob import glob
+    3: from setuptools import find_packages, setup
+    4: 
+    5: package_name = 'local_planner'
+    6: 
+    7: setup(
+    8:     name=package_name,
+    9:     version='0.0.0',
+   10:     packages=find_packages(exclude=['test']),
+   11:     data_files=[
+   12:         ('share/ament_index/resource_index/packages',
+   13:             ['resource/' + package_name]),
+   14:         (os.path.join('share', package_name), ['package.xml']),
+   15:         (os.path.join('share', package_name, 'launch'), glob(os.path.join('launch', '*launch.[pxy][yma]*'))),
+   16:         (os.path.join('share', package_name, 'config'), glob(os.path.join('config', '*'))),
+   17:     ],
+   18:     install_requires=['setuptools', 'numpy', 'casadi', 'matplotlib'],
+   19:     zip_safe=True,
+   20:     maintainer='c',
+   21:     maintainer_email='c@todo.todo',
+   22:     description='TODO: Package description',
+   23:     license='Apache-2.0',
+   24:     tests_require=['pytest'],
+   25:     entry_points={
+   26:         'console_scripts': [
+   27:             'controller_node = local_planner.controller:main',
+   28:             'local_planner_node = local_planner.local_planner:main',
+   29:         ],
+   30:     },
+   31: )
+
+============================================================
+FILE: src\local_planner\setup.cfg
+============================================================
+    1: [develop]
+    2: script_dir=$base/lib/local_planner
+    3: [install]
+    4: install_scripts=$base/lib/local_planner
+
+============================================================
+FILE: src\local_planner\config\config.yaml
+============================================================
+    1: /**:
+    2:   ros__parameters:
+    3:     replan_period: 0.1
+    4:     v_max: 0.5
+    5:     v_min: 0.05
+    6:     omega_max: 0.3
+    7: 
+    8:     MPC_N: 25
+    9:     MPC_step_size: 0.25
+   10: 
+   11:     safe_dist: 0.5
+   12:     gamma_k: 0.3
+   13: 
+   14:     kalman_N: 25
+   15: 
+   16:     MPC_constraint: "CBF"  #    None Euclidean CBF
+   17: 
+   18:     init_N: 1
+   19: 
+   20:     # init_v_0: 0.0
+   21:     # init_omega_0: 0.0
+   22:     
+   23:     init_v_0: 0.01
+   24:     init_omega_0: 0.3
+   25: 
+   26:     init_v_1: 0.01
+   27:     init_omega_1: -0.3
+
+============================================================
+FILE: src\local_planner\launch\local_planner_launch.py
+============================================================
+    1: import os
+    2: from ament_index_python.packages import get_package_share_directory
+    3: from launch import LaunchDescription
+    4: from launch.actions import DeclareLaunchArgument
+    5: from launch.substitutions import LaunchConfiguration
+    6: from launch_ros.actions import Node
+    7: from launch_ros.parameter_descriptions import ParameterValue
+    8: 
+    9: def generate_launch_description():
+   10:     share_dir = get_package_share_directory('local_planner')
+   11:     config_file_path = os.path.join(share_dir, 'config', 'config.yaml')
+   12: 
+   13:     use_sim_time = LaunchConfiguration('use_sim_time')
+   14:     parent_frame = LaunchConfiguration('parent_frame')
+   15:     child_frame = LaunchConfiguration('child_frame')
+   16:     controller_horizon = LaunchConfiguration('controller_horizon')
+   17: 
+   18:     params_declare = DeclareLaunchArgument(
+   19:         'params_file',
+   20:         default_value=config_file_path,
+   21:         description='Path to the ROS2 parameters file for the MPC/D-CBF local planner.'
+   22:     )
+   23:     use_sim_time_declare = DeclareLaunchArgument(
+   24:         'use_sim_time',
+   25:         default_value='false',
+   26:         description='Use /clock when running under Gazebo.'
+   27:     )
+   28:     parent_frame_declare = DeclareLaunchArgument(
+   29:         'parent_frame',
+   30:         default_value='world',
+   31:         description='Frame used as controller state reference.'
+   32:     )
+   33:     child_frame_declare = DeclareLaunchArgument(
+   34:         'child_frame',
+   35:         default_value='base_link',
+   36:         description='Robot base frame looked up by the controller.'
+   37:     )
+   38:     controller_horizon_declare = DeclareLaunchArgument(
+   39:         'controller_horizon',
+   40:         default_value='10',
+   41:         description='Number of control pairs consumed from /local_plan.'
+   42:     )
+   43: 
+   44:     local_planner_node = Node(
+   45:         package='local_planner',
+   46:         executable='local_planner_node',
+   47:         name='local_planner_node',
+   48:         output='screen',
+   49:         parameters=[LaunchConfiguration('params_file'), {'use_sim_time': ParameterValue(use_sim_time, value_type=bool)}],
+   50:     )
+   51:     controller_node = Node(
+   52:         package='local_planner',
+   53:         executable='controller_node',
+   54:         name='controller_node',
+   55:         output='screen',
+   56:         parameters=[{
+   57:             'use_sim_time': ParameterValue(use_sim_time, value_type=bool),
+   58:             'parent_frame': parent_frame,
+   59:             'child_frame': child_frame,
+   60:             'controller_horizon': ParameterValue(controller_horizon, value_type=int),
+   61:         }],
+   62:     )
+   63:     return LaunchDescription([
+   64:         params_declare,
+   65:         use_sim_time_declare,
+   66:         parent_frame_declare,
+   67:         child_frame_declare,
+   68:         controller_horizon_declare,
+   69:         local_planner_node,
+   70:         controller_node,
+   71:     ])
+
+============================================================
+FILE: src\local_planner\local_planner\controller.py
+============================================================
+    1: import rclpy
+    2: from rclpy.node import Node
+    3: import rclpy.time
+    4: import tf2_ros
+    5: import math
+    6: import numpy as np
+    7: from geometry_msgs.msg import Twist
+    8: from std_msgs.msg import Float32MultiArray
+    9: 
+   10: class Controller(Node):
+   11:     def __init__(self):
+   12:         super().__init__('controller')
+   13:         self.declare_parameter('controller_horizon', 10)
+   14:         self.declare_parameter('control_period', 0.02)
+   15:         self.declare_parameter('parent_frame', 'world')
+   16:         self.declare_parameter('child_frame', 'base_link')
+   17: 
+   18:         controller_horizon_value = self.get_parameter('controller_horizon').value
+   19:         control_period_value = self.get_parameter('control_period').value
+   20:         parent_frame_value = self.get_parameter('parent_frame').value
+   21:         child_frame_value = self.get_parameter('child_frame').value
+   22: 
+   23:         self.N = max(1, int(10 if controller_horizon_value is None else controller_horizon_value))
+   24:         control_period = float(0.02 if control_period_value is None else control_period_value)
+   25:         self.parent_frame = str('world' if parent_frame_value is None else parent_frame_value)
+   26:         self.child_frame = str('base_link' if child_frame_value is None else child_frame_value)
+   27: 
+   28:         self.rate = self.create_timer(control_period, self.control_loop)  # 50Hz by default
+   29:         self.get_state = self.create_timer(control_period, self.get_current_state)  # 50Hz by default
+   30: 
+   31:         self.local_plan_sub = self.create_subscription(
+   32:             Float32MultiArray,
+   33:             '/local_plan',
+   34:             self.local_planner_cb,
+   35:             10)
+   36:         self.vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+   37:         self.curr_state_pub = self.create_publisher(Float32MultiArray, '/curr_state', 10)
+   38: 
+   39:         self.tf_buffer = tf2_ros.Buffer()
+   40:         self.listener = tf2_ros.TransformListener(self.tf_buffer, self)
+   41: 
+   42:         self.linear_speed = self.angular_speed = 0.0
+   43:         self.local_plan = np.zeros([self.N, 2])
+   44: 
+   45:     def quart_to_rpy(self, x, y, z, w):
+   46:         r = math.atan2(2*(w*x+y*z), 1-2*(x*x+y*y))
+   47:         p = math.asin(2*(w*y-z*x))
+   48:         y = math.atan2(2*(w*z+x*y), 1-2*(z*z+y*y))
+   49:         return r, p, y
+   50:     
+   51:     def get_current_state(self):
+   52:         try:
+   53:             transform = self.tf_buffer.lookup_transform(self.parent_frame, self.child_frame,
+   54:                                                         rclpy.time.Time())
+   55:             _,_,yaw = self.quart_to_rpy(transform.transform.rotation.x,
+   56:                                         transform.transform.rotation.y,
+   57:                                         transform.transform.rotation.z,
+   58:                                         transform.transform.rotation.w)
+   59:             curr_state = Float32MultiArray()
+   60:             curr_state.data = [transform.transform.translation.x,
+   61:                                transform.transform.translation.y,
+   62:                                yaw]
+   63:             self.curr_state_pub.publish(curr_state)
+   64:         except Exception as exc:
+   65:             self.get_logger().debug(
+   66:                 'Waiting for transform %s -> %s: %s' % (self.parent_frame, self.child_frame, exc)
+   67:             )
+   68:     
+   69:     def pub_vel(self):
+   70:         control_cmd = Twist()
+   71:         control_cmd.linear.x = self.linear_speed
+   72:         control_cmd.angular.z = self.angular_speed
+   73:         # self.get_logger().info('Linear Speed: %.1f, Angular Speed: %.1f' % (self.linear_speed, self.angular_speed))
+   74:         self.vel_pub.publish(control_cmd)
+   75: 
+   76:     def control_loop(self):
+   77:         self.linear_speed = self.local_plan[0, 0]
+   78:         self.angular_speed = self.local_plan[0, 1]
+   79:         self.pub_vel()
+   80: 
+   81:     def local_planner_cb(self, msg):
+   82:         available_pairs = min(self.N, len(msg.data) // 2)
+   83:         if available_pairs == 0:
+   84:             self.get_logger().debug('Received empty local_plan message')
+   85:             return
+   86: 
+   87:         self.local_plan.fill(0.0)
+   88:         for i in range(available_pairs):
+   89:             self.local_plan[i, 0] = msg.data[0 + 2 * i]
+   90:             self.local_plan[i, 1] = msg.data[1 + 2 * i]
+   91: 
+   92:         if available_pairs < self.N:
+   93:             self.get_logger().debug(
+   94:                 'Received %d local_plan pairs, expected %d' % (available_pairs, self.N)
+   95:             )
+   96: 
+   97: def main(args = None):
+   98:     rclpy.init(args=args)
+   99:     controller = Controller()
+  100:     rclpy.spin(controller)
+  101:     controller.destroy_node()
+  102:     rclpy.shutdown()
+  103: 
+  104: if __name__ == '__main__':
+  105:     main()
+  106:             
+
+============================================================
+FILE: src\local_planner\local_planner\local_planner.py
+============================================================
+    1: import rclpy
+    2: import rclpy.duration
+    3: from rclpy.node import Node
+    4: import rclpy.timer
+    5: from std_msgs.msg import Float32MultiArray, ColorRGBA, Bool
+    6: from geometry_msgs.msg import PoseStamped, Point
+    7: from nav_msgs.msg import Path
+    8: from visualization_msgs.msg import Marker
+    9: import threading
+   10: from collections.abc import MutableSequence
+   11: from typing import cast
+   12: 
+   13: import numpy as np
+   14: from numpy.typing import NDArray
+   15: import casadi as ca
+   16: import time
+   17: 
+   18: FloatArray = NDArray[np.float64]
+   19: 
+   20: def distance_global(c1,c2):
+   21:     return np.sqrt((c1[0] - c2[0]) * (c1[0] - c2[0]) + (c1[1] - c2[1]) * (c1[1] - c2[1]))
+   22: 
+   23: class LocalPlanner(Node):
+   24:     def __init__(self):
+   25:         super().__init__('phri_planner')
+   26: 
+   27:         self.curr_state: FloatArray | None = None
+   28:         self.global_path: FloatArray | None = None
+   29: 
+   30:         self.N = 0
+   31:         self.init_N = 0             # 鎻愪緵casadi姹傝В鍣ㄥ垵鍊肩粍鏁?
+   32:         self.init_control: FloatArray = np.zeros((0, 2), dtype=float)
+   33: 
+   34:         self.__load_parameter()
+   35: 
+   36:         self.z = 0.0
+   37:         self.goal_state: FloatArray = np.zeros((self.N, 3), dtype=float)
+   38: 
+   39:         self.last_input: FloatArray = np.zeros((self.N, 2), dtype=float)
+   40:         self.last_state: FloatArray = np.zeros((self.N, 3), dtype=float)
+   41:         self.mpc_success = None
+   42:         self.last_mpc_success = False
+   43: 
+   44:         self.curr_pose_lock = threading.Lock()
+   45:         self.global_path_lock = threading.Lock()
+   46:         self.obstacle_lock = threading.Lock()
+   47: 
+   48:         self.ob: list[FloatArray] = []
+   49: 
+   50:         self.__timer_replan = self.create_timer(self.replan_period, self.__replan_cb) # to check
+   51: 
+   52:         self.__pub_local_path_vis = self.create_publisher(Marker, 'pub_path_vis', 10)
+   53:         self.__pub_local_path = self.create_publisher(Path, 'local_path', 10)
+   54:         self.__pub_local_plan = self.create_publisher(Float32MultiArray, 'local_plan', 10)
+   55:         self.__pub_start = self.create_publisher(Bool, 'cmd_move', 10)
+   56: 
+   57:         self.__sub_curr_state = self.create_subscription(Float32MultiArray, 'curr_state', self.__curr_pose_cb, 10)
+   58:         self.__sub_obs = self.create_subscription(Float32MultiArray, 'obs_predict_pub', self.__obs_cb, 10)
+   59:         self.__sub_goal = self.create_subscription(Path, 'global_path', self.__global_path_cb, 25)
+   60: 
+   61:     def __replan_cb(self):
+   62:         if self.choose_goal_state():
+   63:             if self.curr_state is None or self.global_path is None:
+   64:                 return
+   65:             curr_state = self.curr_state
+   66:             global_path = self.global_path
+   67:             # 娣诲姞瑙掑害淇℃伅
+   68:             for i in range(self.N - 1):
+   69:                 y_diff = self.goal_state[i+1, 1] - self.goal_state[i, 1]
+   70:                 x_diff = self.goal_state[i+1, 0] - self.goal_state[i, 0]
+   71:                 if x_diff != 0 and y_diff != 0:
+   72:                     self.goal_state[i, 2] = np.arctan2(y_diff, x_diff)
+   73:                 elif i != 0:
+   74:                     self.goal_state[i, 2] = self.goal_state[i-1, 2]
+   75:                 else:
+   76:                     self.goal_state[i, 2] = 0
+   77: 
+   78:             self.goal_state[-1, 2] = self.goal_state[-2, 2]
+   79: 
+   80:             states_sol, input_sol = self.MPC_ellip()
+   81: 
+   82:             cmd_move = Bool()
+   83:             cmd_move.data = bool(distance_global(curr_state, global_path[-1]) > 0.1)
+   84:             self.__pub_start.publish(cmd_move)
+   85:             self.__publish_local_plan(input_sol, states_sol)
+   86: 
+   87:     def __curr_pose_cb(self, data):
+   88:         self.curr_pose_lock.acquire()
+   89:         self.curr_state = np.zeros(3, dtype=float)
+   90:         self.curr_state[0] = data.data[0]
+   91:         self.curr_state[1] = data.data[1]
+   92:         self.curr_state[2] = data.data[2]
+   93:         self.curr_pose_lock.release()
+   94: 
+   95:     def __obs_cb(self, data):
+   96:         self.obstacle_lock.acquire()
+   97:         self.ob = []
+   98:         size = int(len(data.data) / 5)
+   99:         for i in range(size):
+  100:             self.ob.append(np.array(data.data[5*i:5*i+5], dtype=float))
+  101:         self.obstacle_lock.release()
+  102: 
+  103:     def __global_path_cb(self, path):
+  104:         self.global_path_lock.acquire()
+  105:         size = len(path.poses)
+  106:         if size > 0:
+  107:             self.global_path = np.zeros((size, 3), dtype=float)
+  108:             for i in range(size):
+  109:                 self.global_path[i, 0] = path.poses[i].pose.position.x
+  110:                 self.global_path[i, 1] = path.poses[i].pose.position.y
+  111:         self.global_path_lock.release()
+  112: 
+  113:     def __publish_local_plan(self, input_sol, state_sol):
+  114:         local_path = Path()
+  115:         local_path.header.frame_id = "world"
+  116:         local_path.header.stamp = self.get_clock().now().to_msg()
+  117: 
+  118:         local_path_vis = Marker()
+  119:         local_path_vis.type = Marker.LINE_LIST
+  120:         local_path_vis.scale.x = 0.05
+  121:         local_path_vis.color.g = local_path_vis.color.b = local_path_vis.color.r = 1.0
+  122:         local_path_vis.header.frame_id = "world"
+  123:         local_path_vis.header.stamp = self.get_clock().now().to_msg()
+  124: 
+  125:         local_plan = Float32MultiArray()
+  126:         local_plan.data = []
+  127:         local_path_poses = cast(MutableSequence[PoseStamped], local_path.poses)
+  128:         local_path_vis_points = cast(MutableSequence[Point], local_path_vis.points)
+  129:         local_path_vis_colors = cast(MutableSequence[ColorRGBA], local_path_vis.colors)
+  130: 
+  131:         for i in range(self.N):
+  132:             this_pose_stamped = PoseStamped()
+  133:             this_pose_stamped.pose.position.x = state_sol[i, 0]
+  134:             this_pose_stamped.pose.position.y = state_sol[i, 1]
+  135:             this_pose_stamped.pose.position.z = self.z
+  136:             this_pose_stamped.pose.orientation.x = 0.0
+  137:             this_pose_stamped.pose.orientation.y = 0.0
+  138:             this_pose_stamped.pose.orientation.z = 0.0
+  139:             this_pose_stamped.pose.orientation.w = 1.0
+  140:             this_pose_stamped.header.frame_id = "world"
+  141:             this_pose_stamped.header.stamp = self.get_clock().now().to_msg()
+  142:             local_path_poses.append(this_pose_stamped)
+  143: 
+  144:             for j in range(len(input_sol[i])):
+  145:                 local_plan.data.append(input_sol[i][j])
+  146: 
+  147:             pt = Point()
+  148:             pt.x = state_sol[i, 0]
+  149:             pt.y = state_sol[i, 1]
+  150:             pt.z = self.z
+  151: 
+  152:             color = ColorRGBA()
+  153:             color.r = 1.0
+  154:             color.g = 0.82
+  155:             color.b = 0.1
+  156:             color.a = 1.0
+  157: 
+  158:             p1 = Point()
+  159:             p2 = Point()
+  160:             p3 = Point()
+  161:             p4 = Point()
+  162: 
+  163:             if i < self.N-1:
+  164:                 x_diff = state_sol[i+1, 0]-state_sol[i, 0]
+  165:                 y_diff = state_sol[i+1, 1]-state_sol[i, 1]
+  166:                 if x_diff != 0 and y_diff != 0:
+  167:                     theta = np.arctan2(y_diff, x_diff)
+  168:                 else:
+  169:                     theta = 0
+  170:                 w = 0.7
+  171:                 l = 0.92
+  172:                 p1.z = pt.z-0.01
+  173:                 p1.x = 0.5*(l*np.cos(theta)-w*np.sin(theta)) + pt.x
+  174:                 p1.y = 0.5*(l*np.sin(theta)+w*np.cos(theta)) + pt.y
+  175:                 p2.z = pt.z-0.01
+  176:                 p2.x = 0.5*(-l*np.cos(theta)-w*np.sin(theta)) + pt.x
+  177:                 p2.y = 0.5*(-l*np.sin(theta)+w*np.cos(theta)) + pt.y
+  178:                 p3.z = pt.z-0.01
+  179:                 p3.x = 0.5*(-l*np.cos(theta)+w*np.sin(theta)) + pt.x
+  180:                 p3.y = 0.5*(-l*np.sin(theta)-w*np.cos(theta)) + pt.y
+  181:                 p4.z = pt.z-0.01
+  182:                 p4.x = 0.5*(l*np.cos(theta)+w*np.sin(theta)) + pt.x
+  183:                 p4.y = 0.5*(l*np.sin(theta)-w*np.cos(theta)) + pt.y
+  184: 
+  185:                 local_path_vis_points.append(p1)
+  186:                 local_path_vis_colors.append(color)
+  187:                 local_path_vis_points.append(p2)
+  188:                 local_path_vis_colors.append(color)
+  189:                 local_path_vis_points.append(p2)
+  190:                 local_path_vis_colors.append(color)
+  191:                 local_path_vis_points.append(p3)
+  192:                 local_path_vis_colors.append(color)
+  193:                 local_path_vis_points.append(p3)
+  194:                 local_path_vis_colors.append(color)
+  195:                 local_path_vis_points.append(p4)
+  196:                 local_path_vis_colors.append(color)
+  197:                 local_path_vis_points.append(p4)
+  198:                 local_path_vis_colors.append(color)
+  199:                 local_path_vis_points.append(p1)
+  200:                 local_path_vis_colors.append(color)
+  201:                 local_path_vis.pose.orientation.x = 0.0
+  202:                 local_path_vis.pose.orientation.y = 0.0
+  203:                 local_path_vis.pose.orientation.z = 0.0
+  204:                 local_path_vis.pose.orientation.w = 1.0
+  205: 
+  206:         self.__pub_local_path_vis.publish(local_path_vis)
+  207:         self.__pub_local_path.publish(local_path)
+  208:         self.__pub_local_plan.publish(local_plan)
+  209: 
+  210:     def __get_float_parameter(self, name: str, default_value: float) -> float:
+  211:         self.declare_parameter(name, default_value)
+  212:         value = self.get_parameter(name).value
+  213:         if value is None:
+  214:             return default_value
+  215:         return float(value)
+  216: 
+  217:     def __get_int_parameter(self, name: str, default_value: int) -> int:
+  218:         self.declare_parameter(name, default_value)
+  219:         value = self.get_parameter(name).value
+  220:         if value is None:
+  221:             return default_value
+  222:         return int(value)
+  223: 
+  224:     def __get_string_parameter(self, name: str, default_value: str) -> str:
+  225:         self.declare_parameter(name, default_value)
+  226:         value = self.get_parameter(name).value
+  227:         if value is None:
+  228:             return default_value
+  229:         return str(value)
+  230: 
+  231:     def __load_parameter(self):
+  232:         self.replan_period = self.__get_float_parameter('replan_period', 0.05)
+  233:         self.v_max = self.__get_float_parameter('v_max', 1.0)
+  234:         self.v_min = self.__get_float_parameter('v_min', 0.05)
+  235:         self.omega_max = self.__get_float_parameter('omega_max', 1.2)
+  236:         self.N = self.__get_int_parameter('MPC_N', 25)
+  237:         self.safe_dist = self.__get_float_parameter('safe_dist', 1.0)
+  238:         self.gamma_k = self.__get_float_parameter('gamma_k', 0.0)
+  239:         self.MPC_constraint = self.__get_string_parameter('MPC_constraint', "CBF")
+  240:         self.kalman_N = self.__get_int_parameter('kalman_N', 25)
+  241:         self.init_N = self.__get_int_parameter('init_N', 0)
+  242:         self.get_logger().info("load init_N with value %d " % self.init_N)
+  243:         self.MPC_step_size = self.__get_float_parameter('MPC_step_size', 0.2)
+  244: 
+  245:         self.init_control = np.zeros((self.init_N, 2), dtype=float)
+  246: 
+  247:         for i in range(self.init_N):
+  248:             self.init_control[i, 0] = self.__get_float_parameter('init_v_' + str(i), 0.0)
+  249:             self.init_control[i, 1] = self.__get_float_parameter('init_omega_' + str(i), 0.0)
+  250: 
+  251:     def choose_goal_state(self):
+  252:         self.curr_pose_lock.acquire()
+  253:         self.global_path_lock.acquire()
+  254:         if self.global_path is None or self.curr_state is None:
+  255:             self.curr_pose_lock.release()
+  256:             self.global_path_lock.release()
+  257:             return False
+  258: 
+  259:         waypoint_num = self.global_path.shape[0]
+  260:         num = np.argmin(np.array([distance_global(self.curr_state, self.global_path[i]) for i in range(waypoint_num)]))
+  261: 
+  262:         scale = 1
+  263:         num_list = []
+  264:         for i in range(self.N):
+  265:             num_path = min(waypoint_num - 1, num + i * scale)
+  266:             num_list.append(num_path)
+  267: 
+  268:         for k in range(self.N):
+  269:             self.goal_state[k] = self.global_path[num_list[k]]
+  270: 
+  271:         self.curr_pose_lock.release()
+  272:         self.global_path_lock.release()
+  273:         return True
+  274: 
+  275:     def MPC_ellip(self):
+  276:         self.curr_pose_lock.acquire()
+  277:         self.global_path_lock.acquire()
+  278:         self.obstacle_lock.acquire()
+  279:         if self.curr_state is None or self.global_path is None:
+  280:             self.curr_pose_lock.release()
+  281:             self.global_path_lock.release()
+  282:             self.obstacle_lock.release()
+  283:             return self.last_state, self.last_input
+  284:         curr_state = self.curr_state
+  285:         global_path = self.global_path
+  286: 
+  287:         opti = ca.Opti()
+  288:         # parameters for optimization
+  289:         T = self.MPC_step_size
+  290:         gamma_k = self.gamma_k
+  291:         # gamma_k = 0.3
+  292: 
+  293:         v_max = self.v_max
+  294:         v_min = self.v_min
+  295:         omega_max = self.omega_max
+  296: 
+  297:         opt_x0 = opti.parameter(3)
+  298: 
+  299:         # state variables
+  300:         opt_states = opti.variable(self.N + 1, 3)       # 鐘舵€?
+  301:         opt_controls = opti.variable(self.N, 2)         # 閫熷害銆佽閫熷害
+  302:         v = opt_controls[:, 0]
+  303:         omega = opt_controls[:, 1]
+  304: 
+  305:         def f(x_, u_): return ca.vertcat(*[u_[0] * ca.cos(x_[2]), u_[0] * ca.sin(x_[2]), u_[1]])
+  306: 
+  307:         def exceed_ob(ob_):
+  308:             axis_epsilon = 1e-3
+  309:             l_long_axis = max(float(ob_[2]), axis_epsilon)
+  310:             l_short_axis = max(float(ob_[3]), axis_epsilon)
+  311:             long_axis = np.array([np.cos(ob_[4]) * l_long_axis, np.sin(ob_[4]) * l_long_axis])
+  312: 
+  313:             ob_vec = np.array([ob_[0], ob_[1]])
+  314:             center_vec = self.goal_state[self.N-1, :2] - ob_vec
+  315:             dist_center = np.linalg.norm(center_vec)
+  316:             if dist_center < axis_epsilon:
+  317:                 return False
+  318:             cos_ = np.dot(center_vec, long_axis.T) / (dist_center * l_long_axis)
+  319: 
+  320:             if np.abs(cos_) > 0.1:
+  321:                 tan_square = 1 / (cos_ ** 2) - 1
+  322:                 d = np.sqrt((l_long_axis ** 2 * l_short_axis ** 2 * (1 + tan_square) / (
+  323:                     l_short_axis ** 2 + l_long_axis ** 2 * tan_square)))
+  324:             else:
+  325:                 d = l_short_axis
+  326: 
+  327:             cross_pt = ob_vec + d * center_vec / dist_center
+  328: 
+  329:             vec1 = self.goal_state[self.N-1, :2] - cross_pt
+  330:             vec2 = curr_state[:2] - cross_pt
+  331:             theta = np.dot(vec1.T, vec2)
+  332: 
+  333:             return theta > 0
+  334:         
+  335:         def h(curpos_, ob_):
+  336:             axis_epsilon = 1e-3
+  337:             c = ca.cos(ob_[4])
+  338:             s = ca.sin(ob_[4])
+  339:             a = max(float(ob_[2]), axis_epsilon)
+  340:             b = max(float(ob_[3]), axis_epsilon)
+  341: 
+  342:             ob_vec = ca.MX([ob_[0], ob_[1]])
+  343:             center_vec = curpos_[:2] - ob_vec.T
+  344: 
+  345:             ellipse_norm = ca.sqrt(
+  346:                 (c ** 2 / a ** 2 + s ** 2 / b ** 2) * center_vec[0] ** 2
+  347:                 + (s ** 2 / a ** 2 + c ** 2 / b ** 2) * center_vec[1] ** 2
+  348:                 + 2 * c * s * (1 / a ** 2 - 1 / b ** 2) * center_vec[0] * center_vec[1]
+  349:             )
+  350:             return b * (ellipse_norm - 1) - self.safe_dist
+  351: 
+  352:         def o(curpos_, ob_):
+  353:             ob_vec = ca.MX([ob_[0], ob_[1]])
+  354:             center_vec = curpos_[:2] - ob_vec.T
+  355:             dist = ca.sqrt(center_vec[0] ** 2 + center_vec[1] ** 2)
+  356:             return dist
+  357: 
+  358:         def quadratic(x, A):
+  359:             return ca.mtimes([x, A, x.T])
+  360: 
+  361:         # init_condition
+  362:         opti.subject_to(opt_states[0, :] == opt_x0.T)
+  363: 
+  364:         # Position Boundaries
+  365:         if(distance_global(curr_state, global_path[-1, :2]) > 1):
+  366:             opti.subject_to(v >= v_min)
+  367:         else:
+  368:             opti.subject_to(v >= -v_min)
+  369:         opti.subject_to(v <= v_max)
+  370: 
+  371:         opti.subject_to(omega >= -omega_max)
+  372:         opti.subject_to(omega <= omega_max)
+  373: 
+  374:         # System Model constraints
+  375:         for i in range(self.N):
+  376:             x_next = opt_states[i, :] + T * f(opt_states[i, :], opt_controls[i, :]).T
+  377:             opti.subject_to(opt_states[i + 1, :] == x_next)
+  378: 
+  379:         prediction_stride = max(1, self.kalman_N)
+  380:         obstacle_horizon = min(self.N, prediction_stride)
+  381:         num_obs = int(len(self.ob) / prediction_stride)
+  382: 
+  383:         # CBF constraint
+  384:         if self.MPC_constraint == "CBF": 
+  385:             for j in range(num_obs):
+  386:                 base = j * prediction_stride
+  387:                 if not exceed_ob(self.ob[base]):  
+  388:                     for i in range(obstacle_horizon - 1):
+  389:                         opti.subject_to(h(opt_states[i + 1, :], self.ob[base + i + 1]) >=
+  390:                                         (1 - gamma_k) * h(opt_states[i, :], self.ob[base + i]))
+  391:         # Euclidean distance constraint   
+  392:         elif self.MPC_constraint == "Euclidean": 
+  393:             for j in range(num_obs):
+  394:                 base = j * prediction_stride
+  395:                 if not exceed_ob(self.ob[base]):    
+  396:                     for i in range(1, obstacle_horizon):
+  397:                         opti.subject_to(o(opt_states[i, :], self.ob[base + i]) >= self.safe_dist)
+  398: 
+  399:         obj = 0
+  400:         R = np.diag([0.1, 0.02])
+  401:         A = np.diag([0.1, 0.02])
+  402:         for i in range(1,self.N):
+  403:             # Q = np.diag([1.0+0.05*i,1.0+0.05*i, 0.02+0.005*i])
+  404:             Q = np.diag([1.0+0.05*i,1.0+0.05*i, 0.0])
+  405:             if i < self.N-1:
+  406:                 obj += 0.1 * quadratic(opt_states[i, :] - self.goal_state[[i]], Q) + quadratic(opt_controls[i, :], R)
+  407:             else:
+  408:                 obj += 0.1 * quadratic(opt_states[i, :] - self.goal_state[[i]], Q)
+  409:         Q = np.diag([1.0,1.0, 0.02])*5
+  410:         obj += quadratic(opt_states[self.N-1, :] - self.goal_state[[self.N-1]], Q)
+  411: 
+  412:         opti.minimize(obj)
+  413:         opts_setting = {'ipopt.max_iter': 2000, 'ipopt.print_level': 0, 'print_time': 0, 'ipopt.acceptable_tol': 1e-3,
+  414:                         'ipopt.acceptable_obj_change_tol': 1e-3}
+  415:         opti.solver('ipopt', opts_setting)
+  416:         opti.set_value(opt_x0, curr_state)
+  417: 
+  418:         optimized_obj = float('inf')
+  419:         u_res = None
+  420:         state_res = None
+  421:         self.mpc_success = False
+  422: 
+  423:         start_time = time.perf_counter()
+  424: 
+  425:         for k in range(self.init_N):
+  426:             init_control = self.init_control[k,:]
+  427:             init_state = np.zeros((self.N + 1, 3), dtype=float)
+  428:             init_state[0,:] = curr_state
+  429: 
+  430:             for i in range(self.N):
+  431:                 state_changed = np.array(T * f(init_state[i,:], init_control).T)
+  432:                 init_state[i+1,:] = init_state[i,:] + state_changed
+  433: 
+  434:             for i in range(self.N):
+  435:                 opti.set_initial(opt_controls[i,:], init_control)   
+  436: 
+  437:             for i in range(self.N + 1):
+  438:                 opti.set_initial(opt_states[i,:], init_state[i,:])
+  439: 
+  440:             try:
+  441:                 sol = opti.solve()
+  442:                 cur_obj = sol.value(obj)
+  443:                 if(cur_obj < optimized_obj):
+  444:                     optimized_obj = cur_obj
+  445:                     u_res = sol.value(opt_controls)
+  446:                     state_res = sol.value(opt_states)
+  447:                 self.mpc_success = True
+  448: 
+  449:             except RuntimeError as exc:
+  450:                 self.get_logger().error(
+  451:                     "fail to find feasible solution for current init value: %s" % exc
+  452:                 )
+  453: 
+  454:         end_time = time.perf_counter()
+  455:         self.get_logger().info("solve use time %f" % (end_time - start_time))
+  456: 
+  457:         if self.mpc_success and u_res is not None and state_res is not None:
+  458:             self.last_input = u_res
+  459:             self.last_state = state_res
+  460:             self.get_logger().info("find feasible solution with score %f" % optimized_obj)
+  461:             self.last_mpc_success = True
+  462:         else:
+  463:             self.get_logger().error("fail to find feasible solution; reusing shifted previous plan")
+  464:             self.last_mpc_success = False
+  465:             if self.N > 1:
+  466:                 self.last_input[:-1] = self.last_input[1:]
+  467:                 self.last_state[:-1] = self.last_state[1:]
+  468:             self.last_input[-1] = np.zeros(2)
+  469:             self.last_state[-1] = self.goal_state[-1]
+  470: 
+  471:         u_res = self.last_input
+  472:         state_res = self.last_state
+  473: 
+  474:         self.curr_pose_lock.release()
+  475:         self.global_path_lock.release()
+  476:         self.obstacle_lock.release()
+  477:         return state_res, u_res
+  478: 
+  479: 
+  480: def main(args = None):
+  481:     rclpy.init(args=args)
+  482:     phri_planner = LocalPlanner()
+  483: 
+  484:     rclpy.spin(phri_planner)
+  485:     phri_planner.destroy_node()
+  486:     rclpy.shutdown()
+  487: 
+  488: 
+  489: if __name__ == '__main__':
+  490:     main()
+  491: 
+
+============================================================
+FILE: src\local_planner\local_planner\usage_casadi.py
+============================================================
+    1: import casadi as ca
+    2: import numpy as np
+    3: import matplotlib.pyplot as plt
+    4: 
+    5: def f(x_, u_): return ca.vertcat(*[u_[0] * ca.cos(x_[2]), u_[0] * ca.sin(x_[2]), u_[1]])
+    6: 
+    7: def quadratic(x, A): return ca.mtimes([x, A, x.T])
+    8: 
+    9: def o(curpos_, obs_pos):
+   10:     center_vec = curpos_[:2] - ca.MX([obs_pos[0], obs_pos[1]]).T
+   11:     dist = ca.sqrt(center_vec[0] ** 2 + center_vec[1] ** 2) - 1
+   12:     return dist
+   13: 
+   14: def cube(curpos_):
+   15:     center_vec = curpos_[:2] - ca.MX([-0.5, 0]).T
+   16:     return ca.fabs(center_vec[0]) + ca.fabs(center_vec[1])
+   17: 
+   18: if __name__ == "__main__":
+   19:     N = 50
+   20:     T = 0.1
+   21:     v_min = 0
+   22:     v_max = 1
+   23:     omega_max = 1
+   24:     goal_state = np.zeros([N, 3])
+   25: 
+   26:     for i in range(N):
+   27:         goal_state[i][0] = i/10
+   28: 
+   29:     init_state = np.array([0.0, 0.0, 0])
+   30:     init_control = np.array([0.1, 0.01])
+   31:     init_control_state = np.zeros([N + 1,3])
+   32:     init_control_state[0,:] = init_state
+   33:     for i in range(N):
+   34:         state_changed = np.array(T * f(init_control_state[i,:], init_control).T)
+   35:         init_control_state[i+1,:] = init_control_state[i,:] + state_changed
+   36: 
+   37:     time_step = np.zeros([N,1])
+   38:     for i in range(N):
+   39:         time_step[i] = i
+   40: 
+   41:     obs_pos = np.array([2.5, 0])
+   42: 
+   43:     opti = ca.Opti()
+   44:     opt_x0 = opti.parameter(3)
+   45: 
+   46:     opt_states = opti.variable(N + 1, 3)
+   47:     opt_controls = opti.variable(N, 2)
+   48: 
+   49:     v = opt_controls[:, 0]
+   50:     omega = opt_controls[:, 1]
+   51: 
+   52: 
+   53:     opti.subject_to(opt_states[0,:] == opt_x0.T)
+   54:     opti.subject_to(opti.bounded(v_min, v, v_max))
+   55:     opti.subject_to(opti.bounded(-omega_max, omega, omega_max))
+   56: 
+   57:     for i in range(N):
+   58:         x_next = opt_states[i,:] + T * f(opt_states[i,:], opt_controls[i,:]).T
+   59:         opti.subject_to(opt_states[i+1,:] == x_next)
+   60: 
+   61:     for i in range(N):
+   62:         # opti.subject_to(cube(opt_states[i,:]) >= 0.2)
+   63:         opti.subject_to(o(opt_states[i+1,:], obs_pos) >= (0.5*o(opt_states[i,:], obs_pos)))
+   64:         # opti.subject_to(((opt_states[i,0] + 0)**2 + (opt_states[i,1] + 0)**2) >= 0.1)
+   65: 
+   66:     opti.set_value(opt_x0, init_state)
+   67: 
+   68:     obj = 0
+   69:     R = np.diag([0.1, 0.02])
+   70:     A = np.diag([0.1, 0.02])
+   71:     for i in range(1,N):
+   72:         Q = np.diag([1.0+0.05*i,1.0+0.05*i, 0.02+0.005*i])
+   73:         if i < N-1:
+   74:             obj += 0.1 * quadratic(opt_states[i, :] - goal_state[[i]], Q) + quadratic(opt_controls[i, :], R)
+   75:         else:
+   76:             obj += 0.1 * quadratic(opt_states[i, :] - goal_state[[i]], Q)
+   77:     Q = np.diag([1.0,1.0, 0.02])*5
+   78:     obj += quadratic(opt_states[N-1, :] - goal_state[[N-1]], Q)
+   79: 
+   80:     # I = np.diag([100,100,100])
+   81:     # obj += quadratic(opt_states[0,:] - opt_x0.T, I)
+   82: 
+   83:     opti.minimize(obj)
+   84:     opts_setting = {'ipopt.max_iter': 10000, 'ipopt.print_level': 3, 'print_time': 0, 'ipopt.acceptable_tol': 1e-3,
+   85:                     'ipopt.acceptable_obj_change_tol': 1e-3, 'ipopt.acceptable_constr_viol_tol': 1e-3}
+   86:     opti.solver('ipopt', opts_setting)
+   87: 
+   88:     for i in range(N):
+   89:         opti.set_initial(opt_controls[i, :], init_control)
+   90: 
+   91:     for i in range(N+1):
+   92:         opti.set_initial(opt_states[i,:], init_control_state[i,:])
+   93: 
+   94:     try:
+   95:         sol = opti.solve()
+   96:         u_res = sol.value(opt_controls)
+   97:         state_predict = sol.value(opt_states)
+   98:         optimized_obj_value = opti.value(obj)
+   99:         print(optimized_obj_value)
+  100: 
+  101:     except Exception as e:
+  102:         print("error")
+  103:         u_res = opti.debug.value(opt_controls)
+  104:         state_predict = opti.debug.value(opt_states)
+  105: 
+  106: 
+  107:     fig, axs = plt.subplots(2, 1)
+  108: 
+  109:     axs[0].plot(init_control_state[:,0], init_control_state[:,1])
+  110:     axs[0].plot(state_predict[:,0], state_predict[:,1])
+  111: 
+  112:     # axs[0].set_xlim(-1.5, 0.5)
+  113:     axs[0].set_aspect('equal')
+  114: 
+  115:     axs[1].plot(time_step, u_res[:,0])
+  116:     axs[1].plot(time_step, u_res[:,1])
+  117:     plt.show()
+
+============================================================
+FILE: src\local_map\package.xml
+============================================================
+    1: <?xml version="1.0"?>
+    2: <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+    3: <package format="3">
+    4:   <name>local_map</name>
+    5:   <version>0.0.0</version>
+    6:   <description>TODO: Package description</description>
+    7:   <maintainer email="c@todo.todo">c</maintainer>
+    8:   <license>Apache-2.0</license>
+    9: 
+   10:   <buildtool_depend>ament_cmake</buildtool_depend>
+   11: 
+   12:   <depend>rclcpp</depend>
+   13:   <depend>std_msgs</depend>
+   14:   <depend>visualization_msgs</depend>
+   15:   <depend>geometry_msgs</depend>
+   16:   <depend>sensor_msgs</depend>
+   17:   <depend>nav_msgs</depend>
+   18:   <depend>pcl_conversions</depend>
+   19:   <depend>pcl_ros</depend>
+   20:   <depend>grid_map_core</depend>
+   21:   <depend>grid_map_msgs</depend>
+   22:   <depend>grid_map_octomap</depend>
+   23:   <depend>grid_map_ros</depend>
+   24:   <depend>tf2</depend>
+   25:   <depend>tf2_ros</depend>
+   26:   <depend>tf2_eigen</depend>
+   27:   <depend>tf2_geometry_msgs</depend>
+   28:   <depend>rviz_visual_tools</depend>
+   29:   <depend>eigen</depend>
+   30:   <depend>libpcl-all-dev</depend>
+   31:   <depend>boost</depend>
+   32:   <depend>cgal</depend>
+   33: 
+   34:   <test_depend>ament_lint_auto</test_depend>
+   35:   <test_depend>ament_lint_common</test_depend>
+   36: 
+   37:   <export>
+   38:     <build_type>ament_cmake</build_type>
+   39:   </export>
+   40: </package>
+
+============================================================
+FILE: src\local_map\config\config.yaml
+============================================================
+    1: /**:
+    2:   ros__parameters:
+    3:     # lidar_topic: "/livox/lidar"
+    4:     lidar_topic: "velodyne_points"
+    5: 
+    6:     base_link: "base_link"
+    7:     base_scan: "base_scan"
+    8: 
+    9:     localmap_x_size: 10.0
+   10:     localmap_y_size: 10.0
+   11:     max_heigh: 1.0
+   12: 
+   13:     resolution: 0.1
+   14:     obs_height: 0.4
+   15:     step_height: 0.5
+   16:     DBSCAN_R: 5.0
+   17:     DBSCAN_N: 5
+   18: 
+   19:     # localmap_x_size: 10.0
+   20:     # localmap_y_size: 10.0
+   21:     # max_heigh: 1.0
+   22: 
+   23:     # resolution: 0.05  
+   24:     # obs_height: 0.4
+   25:     # step_height: 0.8
+   26:     # DBSCAN_R: 10.0
+   27:     # DBSCAN_N: 5
+   28: 
+   29:     block_size: 5
+   30:     block_num: 5
+   31: 
+
+============================================================
+FILE: src\local_map\src\local_map.cpp
+============================================================
+    1: #include <mutex>
+    2: 
+    3: #include <rclcpp/rclcpp.hpp>
+    4: #include <rclcpp/duration.hpp>
+    5: 
+    6: #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+    7: // #include <tf2/buffer_core.h>
+    8: #include <tf2_ros/buffer.h>
+    9: #include <tf2_ros/transform_listener.h>
+   10: 
+   11: #include <tf2/convert.h>
+   12: #include <tf2/transform_storage.h>
+   13: #include <tf2/transform_datatypes.h>
+   14: #include <tf2/LinearMath/Transform.h>
+   15: #include <tf2_eigen/tf2_eigen.hpp>
+   16: #include <eigen3/Eigen/Core>
+   17: 
+   18: // #include <geometry_msgs/TransformStamped.h>
+   19: 
+   20: #include <sensor_msgs/msg/point_cloud2.hpp>
+   21: #include <nav_msgs/msg/odometry.hpp>
+   22: 
+   23: #include <grid_map_ros/grid_map_ros.hpp>
+   24: #include <grid_map_msgs/msg/grid_map.hpp>
+   25: 
+   26: #include <pcl/filters/passthrough.h>
+   27: #include <pcl/filters/voxel_grid.h>
+   28: #include <pcl_conversions/pcl_conversions.h>
+   29: #include <pcl/common/transforms.h>
+   30: 
+   31: #include "ellipse.hpp"
+   32: #include "DBSCAN.hpp"
+   33: #include "KM.hpp"
+   34: 
+   35: using namespace grid_map;
+   36: 
+   37: GridMap map_({"elevation", "local_lidar", "gradient_map"});
+   38: 
+   39: class LocalMapPubNode : public rclcpp::Node
+   40: {
+   41: public:
+   42:     LocalMapPubNode() : Node("local_map_pub")
+   43:     {
+   44:         InitParameters();
+   45:         InitializeTFListener();
+   46:         InitializeSubPub();
+   47:         
+   48:         auto period_ms = std::chrono::milliseconds(static_cast<int64_t>(1000.0 / 5));
+   49:         timer_ = rclcpp::create_timer(this, this->get_clock(), period_ms, std::bind(&LocalMapPubNode::timer_callback, this));
+   50:     }
+   51: 
+   52: private:
+   53:     void InitParameters()
+   54:     {
+   55:         this->declare_parameter<float>("localmap_x_size", 10.0);
+   56:         this->declare_parameter<float>("localmap_y_size", 10.0);
+   57:         this->declare_parameter<float>("max_heigh", 2.0);
+   58:         this->declare_parameter<float>("resolution", 0.1);
+   59: 
+   60:         this->declare_parameter<float>("obs_height", 0.4);
+   61:         this->declare_parameter<float>("step_height", 0.5);
+   62:         this->declare_parameter<float>("DBSCAN_R", 5.0);
+   63:         this->declare_parameter<int>("DBSCAN_N", 5);
+   64: 
+   65:         this->declare_parameter<int>("block_size", 5);
+   66:         this->declare_parameter<int>("block_num", 5);
+   67: 
+   68:         this->declare_parameter<std::string>("lidar_topic", "/livox/lidar");
+   69:         this->declare_parameter<std::string>("base_link", "base_link");
+   70:         this->declare_parameter<std::string>("base_scan", "base_scan");
+   71: 
+   72:         // ----------------------------------------------------------------
+   73:         this->get_parameter<float>("localmap_x_size", localmap_x_size);
+   74:         this->get_parameter<float>("localmap_y_size", localmap_y_size);
+   75:         this->get_parameter<float>("max_heigh", max_heigh);
+   76:         
+   77:         this->get_parameter<float>("resolution", resolution);
+   78: 
+   79:         this->get_parameter<float>("obs_height", obs_height);
+   80:         this->get_parameter<float>("step_height", step_height);
+   81:         this->get_parameter<float>("DBSCAN_R", DBSCAN_R);
+   82:         this->get_parameter<int>("DBSCAN_N", DBSCAN_N);
+   83: 
+   84:         this->get_parameter<int>("block_size", block_size);
+   85:         this->get_parameter<int>("block_num", block_num);
+   86:         
+   87:         this->get_parameter<std::string>("lidar_topic", lidar_topic);
+   88:         this->get_parameter<std::string>("base_link", base_link);
+   89:         this->get_parameter<std::string>("base_scan", base_scan);
+   90: 
+   91:         _inv_resolution = 1 / resolution;
+   92:         map_index_len = localmap_x_size * _inv_resolution;
+   93: 
+   94:         MapParam.localmap_x_size = localmap_x_size;
+   95:         MapParam.localmap_y_size = localmap_y_size;
+   96:         MapParam.resolution = resolution;
+   97: 
+   98:         map_.setFrameId("world");
+   99:         map_.setGeometry(Length(localmap_x_size, localmap_y_size), resolution);
+  100: 
+  101:         lidar_pcd_matrix = Eigen::MatrixXf(map_index_len, map_index_len);
+  102:         map_interpolate = Eigen::MatrixXf(map_index_len, map_index_len);
+  103:         gradient_map = Eigen::MatrixXf(map_index_len, map_index_len);
+  104: 
+  105:         pass_x.setFilterFieldName("x");
+  106:         pass_x.setFilterLimits(-localmap_x_size / 2, localmap_x_size / 2);
+  107:         pass_y.setFilterFieldName("y");
+  108:         pass_y.setFilterLimits(-localmap_y_size / 2, localmap_y_size / 2);
+  109:         pass_z.setFilterFieldName("z");
+  110:         pass_z.setFilterLimits(-1, max_heigh);
+  111: 
+  112:         sor.setLeafSize(0.05f, 0.05f, 0.05f);
+  113: 
+  114:         received_lidar_data = false;
+  115: 
+  116:         RCLCPP_INFO(this->get_logger(), "max heigh is set to %f" , max_heigh);
+  117:     }
+  118: 
+  119:     // 鍒濆鍖杝ubscribe鍜宲ublish
+  120:     void InitializeSubPub()
+  121:     {
+  122:         velodyne_sub = this->create_subscription<sensor_msgs::msg::PointCloud2>(
+  123:             lidar_topic, 1, std::bind(&LocalMapPubNode::PointCloudCallback, this, std::placeholders::_1));
+  124: 
+  125:         // obs_pc_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("obs_pc", 1);
+  126: 
+  127:         gridmap_pub = this->create_publisher<grid_map_msgs::msg::GridMap>("gridmap", 1);
+  128:         local_pcd_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>("local_pcd", 1);
+  129:         ellipse_vis_pub = this->create_publisher<visualization_msgs::msg::MarkerArray>("ellipse_vis", 1);
+  130:         for_obs_track_pub = this->create_publisher<std_msgs::msg::Float32MultiArray>("for_obs_track", 1);
+  131:         RCLCPP_INFO(this->get_logger(), "init subscribe/publish complete");
+  132:     }
+  133: 
+  134:     // 鍒濆鍖杢f鑾峰彇
+  135:     void InitializeTFListener()
+  136:     {
+  137:         tf_buffer = std::make_shared<tf2_ros::Buffer>(this->get_clock());
+  138:         transform_listener = std::make_shared<tf2_ros::TransformListener>(*tf_buffer);
+  139:         RCLCPP_INFO(this->get_logger(), "init tf complete");
+  140:     }
+  141: 
+  142:     void updateTF()
+  143:     {
+  144:         try
+  145:         {
+  146:             geometry_msgs::msg::TransformStamped base_link_transformStamped = tf_buffer->lookupTransform("world", base_link, rclcpp::Time(0));
+  147:             base_link_transform = base_link_transformStamped;
+  148: 
+  149:             geometry_msgs::msg::TransformStamped lidar_link_transformStamped = tf_buffer->lookupTransform("world", base_scan, rclcpp::Time(0));
+  150:             lidar_link_transform = lidar_link_transformStamped;
+  151:         }
+  152:         catch (tf2::TransformException &ex)
+  153:         {
+  154:             RCLCPP_ERROR(this->get_logger(), "%s", ex.what());
+  155:         }
+  156:     }
+  157: 
+  158:     void PointCloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
+  159:     {
+  160:         std::lock_guard<std::mutex> lock(point_cloud_mutex);
+  161:         pcl::fromROSMsg(*msg, velodyne_cloud);
+  162:         updateTF();
+  163:         received_lidar_data = true;
+  164:     }
+  165: 
+  166:     void timer_callback()
+  167:     {
+  168:         if(received_lidar_data == false)
+  169:         {
+  170:             RCLCPP_INFO(this->get_logger(), "wait for lidar");
+  171:             return;
+  172:         }
+  173:         robot_position2d << base_link_transform.transform.translation.x, base_link_transform.transform.translation.y;
+  174: 
+  175:         pcd_transform();
+  176: 
+  177:         map_.setPosition(robot_position2d);
+  178:         map_.clear("local_lidar");
+  179:         lidar_pcd_matrix = map_.get("local_lidar");
+  180:         lidar2gridmap(lidar_pcd_matrix);
+  181:         map_.add("local_lidar", lidar_pcd_matrix);
+  182: 
+  183:         map_interpolate = map_interpolation(lidar_pcd_matrix);
+  184:         map_interpolate = map_inflate(map_interpolate);
+  185:         map_.add("elevation", map_interpolate);
+  186: 
+  187:         // obs map
+  188:         vector<DBSCAN::Point> non_clustered_obs;
+  189:         gradient_map = gradient_map_processing(map_interpolate, non_clustered_obs);
+  190: 
+  191:         // DBSCAN
+  192:         DBSCAN DS(DBSCAN_R, DBSCAN_N, non_clustered_obs);
+  193:         vector<Obstacle> clustered_obs(DS.cluster_num);
+  194: 
+  195:         for (const auto &obs : non_clustered_obs)
+  196:         {
+  197:             if (obs.obsID > 0)
+  198:             {
+  199:                 gradient_map(obs.x, obs.y) = -0.3;
+  200:                 clustered_obs[obs.obsID - 1].emplace_back(obs.x, obs.y);
+  201:             }
+  202:         }
+  203: 
+  204:         vector<Ellipse> ellipses_array = get_ellipse_array(clustered_obs, map_, MapParam);
+  205: 
+  206:         KM.tracking(ellipses_array);
+  207: 
+  208:         ab_variance_calculation(ellipses_array);
+  209: 
+  210:         // publish
+  211:         std_msgs::msg::Float32MultiArray for_obs_track;
+  212:         for (const auto &ellipse : ellipses_array)
+  213:         {
+  214:             if (ellipse.label == 0)
+  215:                 continue;
+  216: 
+  217:             for_obs_track.data.push_back(ellipse.cx);
+  218:             for_obs_track.data.push_back(ellipse.cy);
+  219:             for_obs_track.data.push_back(ellipse.semimajor);
+  220:             for_obs_track.data.push_back(ellipse.semiminor);
+  221:             for_obs_track.data.push_back(ellipse.theta);
+  222:             for_obs_track.data.push_back(ellipse.label);
+  223:             for_obs_track.data.push_back(ellipse.variance);
+  224:         }
+  225: 
+  226:         for_obs_track_pub->publish(for_obs_track);
+  227: 
+  228:         sensor_msgs::msg::PointCloud2 local_velodyne_msg;
+  229:         pcl::toROSMsg(velodyne_cloud_global, local_velodyne_msg);
+  230:         local_velodyne_msg.header.stamp = this->get_clock()->now();
+  231:         local_velodyne_msg.header.frame_id = "world";
+  232:         local_pcd_pub->publish(local_velodyne_msg);
+  233: 
+  234:         // grid_map_msgs::msg::GridMap gridMapMessage;
+  235:         std::shared_ptr<grid_map_msgs::msg::GridMap> gridMapMessage;
+  236:         // grid_map_ros2::GridMapRosConverter::toMessage(map_, gridMapMessage);
+  237:         gridMapMessage = GridMapRosConverter::toMessage(map_);
+  238:         gridmap_pub->publish(*gridMapMessage);
+  239: 
+  240:         visEllipse(ellipses_array);
+  241: 
+  242:         received_lidar_data = false;
+  243:     }
+  244: 
+  245:     void pcd_transform()
+  246:     {
+  247:         std::lock_guard<std::mutex> lock(point_cloud_mutex);
+  248:         pass_x.setInputCloud(velodyne_cloud.makeShared());
+  249:         pass_x.filter(velodyne_cloud);
+  250: 
+  251:         pass_y.setInputCloud(velodyne_cloud.makeShared());
+  252:         pass_y.filter(velodyne_cloud);
+  253: 
+  254:         pass_z.setInputCloud(velodyne_cloud.makeShared());
+  255:         pass_z.filter(velodyne_cloud);
+  256: 
+  257:         velodyne_cloud_filter.clear();
+  258:         sor.setInputCloud(velodyne_cloud.makeShared());
+  259:         sor.filter(velodyne_cloud_filter);
+  260: 
+  261:         Eigen::Affine3d affine_transform;
+  262:         affine_transform = tf2::transformToEigen(lidar_link_transform);
+  263:         pcl::transformPointCloud(velodyne_cloud_filter, velodyne_cloud_global, affine_transform);
+  264:     }
+  265: 
+  266:     void lidar2gridmap(Eigen::MatrixXf &lidar_data_matrix)
+  267:     {
+  268:         int col = lidar_data_matrix.cols();
+  269:         int row = lidar_data_matrix.rows();
+  270:         for (const auto &pt : velodyne_cloud_global)
+  271:         {
+  272:             int j = (pt.x - robot_position2d.x()) * _inv_resolution + col * 0.5;
+  273:             j = min(max(j, 0), row - 1);
+  274:             int k = (pt.y - robot_position2d.y()) * _inv_resolution + row * 0.5;
+  275:             k = min(max(k, 0), col - 1);
+  276: 
+  277:             if (std::isnan(lidar_data_matrix(row - 1 - j, col - 1 - k)))
+  278:                 lidar_data_matrix(row - 1 - j, col - 1 - k) = pt.z;
+  279:             if (lidar_data_matrix(row - 1 - j, col - 1 - k) < pt.z)
+  280:                 lidar_data_matrix(row - 1 - j, col - 1 - k) = pt.z;
+  281:         }
+  282:     }
+  283: 
+  284:     void map_inflate_block(Eigen::MatrixXf &dst, const Eigen::MatrixXf &src, int startRow, int startCol, int radius)
+  285:     {
+  286:         for (int k = 0; k <= 2 * radius; k++)
+  287:         {
+  288:             for (int q = 0; q <= 2 * radius; q++)
+  289:             {
+  290:                 if (isnan(src(startRow - radius + k, startCol - radius + q)))
+  291:                 {
+  292:                     dst(startRow - radius + k, startCol - radius + q) = src(startRow, startCol);
+  293:                 }
+  294:             }
+  295:         }
+  296:     }
+  297: 
+  298:     void visEllipse(const std::vector<Ellipse> &obs_ellipses)
+  299:     {
+  300:         // ellipse
+  301:         visualization_msgs::msg::MarkerArray ellipse_vis;
+  302: 
+  303:         visualization_msgs::msg::Marker shape_vis;
+  304:         shape_vis.header.frame_id = "world";
+  305:         shape_vis.header.stamp = this->get_clock()->now();
+  306:         shape_vis.ns = "ellipse";
+  307:         shape_vis.type = visualization_msgs::msg::Marker::CYLINDER;
+  308:         shape_vis.action = visualization_msgs::msg::Marker::ADD;
+  309:         shape_vis.lifetime = rclcpp::Duration::from_seconds(0.15);
+  310: 
+  311:         // number
+  312:         visualization_msgs::msg::Marker text_vis;
+  313:         text_vis.header.frame_id = "world";
+  314:         text_vis.header.stamp = this->get_clock()->now();
+  315:         text_vis.ns = "text";
+  316:         text_vis.action = visualization_msgs::msg::Marker::ADD;
+  317:         text_vis.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+  318:         text_vis.lifetime = rclcpp::Duration::from_seconds(0.1);
+  319:         text_vis.scale.z = 0.3;
+  320:         text_vis.color.r = 1;
+  321:         text_vis.color.g = 1;
+  322:         text_vis.color.b = 1;
+  323:         text_vis.color.a = 1;
+  324: 
+  325:         for (size_t i = 0; i < obs_ellipses.size(); i++)
+  326:         {
+  327:             shape_vis.color.a = 0.9;
+  328:             if (obs_ellipses[i].variance < 0.0007)
+  329:             {
+  330:                 shape_vis.color.r = 0;
+  331:                 shape_vis.color.g = 0;
+  332:                 shape_vis.color.b = 1;
+  333:             }
+  334:             else if (obs_ellipses[i].variance > 0.005)
+  335:             {
+  336:                 shape_vis.color.r = 1;
+  337:                 shape_vis.color.g = 0;
+  338:                 shape_vis.color.b = 0;
+  339:             }
+  340:             else
+  341:             {
+  342:                 float dt = (obs_ellipses[i].variance - 0.0007) / (0.005 - 0.0007);
+  343:                 if (dt > 0.5)
+  344:                 {
+  345:                     shape_vis.color.r = 1;
+  346:                     shape_vis.color.g = 1 - dt;
+  347:                     shape_vis.color.b = 1 - dt;
+  348:                 }
+  349:                 else
+  350:                 {
+  351:                     shape_vis.color.r = dt;
+  352:                     shape_vis.color.g = dt;
+  353:                     shape_vis.color.b = 1;
+  354:                 }
+  355:             }
+  356: 
+  357:             shape_vis.id = i;
+  358:             shape_vis.pose.orientation.x = 0.0;
+  359:             shape_vis.pose.orientation.y = 0.0;
+  360:             shape_vis.pose.orientation.z = sin(obs_ellipses[i].theta / 2);
+  361:             shape_vis.pose.orientation.w = cos(obs_ellipses[i].theta / 2);
+  362:             shape_vis.pose.position.x = obs_ellipses[i].cx;
+  363:             shape_vis.pose.position.y = obs_ellipses[i].cy;
+  364:             shape_vis.pose.position.z = -0.0;
+  365:             shape_vis.scale.x = 2 * obs_ellipses[i].semimajor;
+  366:             shape_vis.scale.y = 2 * obs_ellipses[i].semiminor;
+  367:             shape_vis.scale.z = 0.75;
+  368: 
+  369:             text_vis.id = obs_ellipses[i].label;
+  370: 
+  371:             text_vis.text = to_string(obs_ellipses[i].label);
+  372:             text_vis.pose.position.x = obs_ellipses[i].cx - 0.3;
+  373:             text_vis.pose.position.y = obs_ellipses[i].cy;
+  374:             text_vis.pose.position.z = 0.2;
+  375: 
+  376:             // publish
+  377:             ellipse_vis.markers.push_back(shape_vis);
+  378:             ellipse_vis.markers.push_back(text_vis);
+  379:         }
+  380: 
+  381:         ellipse_vis_pub->publish(ellipse_vis);
+  382:     }
+  383: 
+  384:     Eigen::MatrixXf map_inflate(const Eigen::MatrixXf &map_data)
+  385:     {
+  386:         int col = map_data.cols(), row = map_data.rows();
+  387:         Eigen::MatrixXf map_inflated(map_data);
+  388:         for (int i = 3; i < row - 3; i++)
+  389:         {
+  390:             for (int j = 3; j < col - 3; j++)
+  391:             {
+  392:                 if (isnan(map_data(i, j)))
+  393:                     continue;
+  394: 
+  395:                 double dis = sqrt((i - col / 2) * (i - col / 2) + (j - col / 2) * (j - col / 2));
+  396:                 int radius;
+  397:                 if (dis < col / 3)
+  398:                     radius = 1;
+  399:                 else if (dis < col * 0.45)
+  400:                     radius = 2;
+  401:                 else
+  402:                     radius = 3;
+  403:                 map_inflate_block(map_inflated, map_data, i, j, radius);
+  404:             }
+  405:         }
+  406:         return map_inflated;
+  407:     }
+  408: 
+  409:     Eigen::MatrixXf map_interpolation(const Eigen::MatrixXf &map_data)
+  410:     {
+  411:         int col = map_data.cols(), row = map_data.rows();
+  412:         Eigen::MatrixXf map_interpolation(map_data);
+  413:         for (int i = 1; i < row - 1; i++)
+  414:         {
+  415:             for (int j = 1; j < col - 1; j++)
+  416:             {
+  417:                 if (isnan(map_data(i, j)))
+  418:                 {
+  419:                     int count = 0;
+  420:                     float height = 0;
+  421:                     for (int k = 0; k <= 2; k++)
+  422:                     {
+  423:                         for (int q = 0; q <= 2; q++)
+  424:                         {
+  425:                             if (!isnan(map_data(i - 1 + k, j - 1 + q)))
+  426:                             {
+  427:                                 count++;
+  428:                                 height += map_data(i - 1 + k, j - 1 + q);
+  429:                             }
+  430:                         }
+  431:                     }
+  432:                     map_interpolation(i, j) = (count > 0) ? height / count : NAN;
+  433:                 }
+  434:             }
+  435:         }
+  436:         return map_interpolation;
+  437:     }
+  438: 
+  439:     Eigen::MatrixXf gradient_map_processing(Eigen::MatrixXf &map_data, vector<DBSCAN::Point> &dataset)
+  440:     {
+  441:         const float threshold = -1.25;
+  442:         int col = map_data.cols(), row = map_data.rows();
+  443:         Eigen::MatrixXf gradient_map(row, col);
+  444:         gradient_map.setOnes();
+  445:         gradient_map *= threshold;
+  446:         DBSCAN::Point obs;
+  447: 
+  448:         for (int i = 1; i < row - 1; i++)
+  449:         {
+  450:             for (int j = 1; j < col - 1; j++)
+  451:             {
+  452:                 bool has_nan_value = false;
+  453:                 for (int p = -1; p <= 1; p++)
+  454:                 {
+  455:                     for (int q = -1; q <= 1; q++)
+  456:                     {
+  457:                         if (isnan(map_data(i + p, j + q)))
+  458:                         {
+  459:                             gradient_map(i, j) = threshold;
+  460:                             has_nan_value = true;
+  461:                         }
+  462:                     }
+  463:                 }
+  464:                 if (!has_nan_value)
+  465:                 {
+  466:                     float sobel_x = map_data(i + 1, j + 1) - map_data(i - 1, j + 1) + map_data(i + 1, j) - map_data(i - 1, j) +
+  467:                                     map_data(i + 1, j - 1) - map_data(i - 1, j - 1);
+  468:                     float sobel_y = map_data(i - 1, j + 1) - map_data(i - 1, j - 1) + map_data(i, j + 1) - map_data(i, j - 1) +
+  469:                                     map_data(i + 1, j + 1) - map_data(i + 1, j - 1);
+  470:                     gradient_map(i, j) = sqrt(sobel_x * sobel_x + sobel_y * sobel_y) + threshold;
+  471:                     if (gradient_map(i, j) > obs_height + threshold)
+  472:                     {
+  473:                         obs.x = i;
+  474:                         obs.y = j;
+  475:                         dataset.push_back(obs);
+  476:                     }
+  477:                     else
+  478:                     {
+  479:                         Eigen::MatrixXf::Index minRow, minCol;
+  480:                         Eigen::MatrixXf block = map_data.block(i / block_size, j / block_size, block_size, block_size);
+  481:                         float min = block.minCoeff(&minRow, &minCol);
+  482:                         if (map_data(i, j) - min > step_height)
+  483:                         {
+  484:                             obs.x = i;
+  485:                             obs.y = j;
+  486:                             dataset.push_back(obs);
+  487:                         }
+  488:                     }
+  489:                 }
+  490:             }
+  491:         }
+  492: 
+  493:         return gradient_map;
+  494:     }
+  495: 
+  496:     // 鎴愬憳鍙橀噺
+  497: 
+  498:     pcl::PointCloud<pcl::PointXYZ> velodyne_cloud;
+  499:     pcl::PointCloud<pcl::PointXYZ> velodyne_cloud_filter;
+  500:     pcl::PointCloud<pcl::PointXYZ> velodyne_cloud_global;
+  501: 
+  502:     pcl::PassThrough<pcl::PointXYZ> pass_x;
+  503:     pcl::PassThrough<pcl::PointXYZ> pass_y;
+  504:     pcl::PassThrough<pcl::PointXYZ> pass_z;
+  505:     pcl::VoxelGrid<pcl::PointXYZ> sor;
+  506: 
+  507:     LocalMapParam MapParam;
+  508:     float localmap_x_size, localmap_y_size, max_heigh, resolution, _inv_resolution;
+  509:     float obs_height, step_height, DBSCAN_R;
+  510:     int DBSCAN_N;
+  511:     int block_size, block_num;
+  512:     int map_index_len;
+  513: 
+  514:     Eigen::Vector2d robot_position2d;
+  515:     KMAlgorithm KM;
+  516: 
+  517:     Eigen::MatrixXf lidar_pcd_matrix;
+  518:     Eigen::MatrixXf map_interpolate;
+  519:     Eigen::MatrixXf gradient_map;
+  520: 
+  521:     geometry_msgs::msg::TransformStamped base_link_transform;
+  522:     geometry_msgs::msg::TransformStamped lidar_link_transform;
+  523: 
+  524:     // 瀹氭椂鍣?pub/sub
+  525:     rclcpp::TimerBase::SharedPtr timer_;
+  526:     rclcpp::TimerBase::SharedPtr TF_timer_;
+  527: 
+  528:     rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr velodyne_sub;
+  529: 
+  530:     rclcpp::Publisher<grid_map_msgs::msg::GridMap>::SharedPtr gridmap_pub;
+  531:     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr local_pcd_pub;
+  532:     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr ellipse_vis_pub;
+  533:     rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr for_obs_track_pub;
+  534: 
+  535:     // rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr obs_pc_pub;
+  536: 
+  537:     //
+  538:     std::shared_ptr<tf2_ros::Buffer> tf_buffer;
+  539:     std::shared_ptr<tf2_ros::TransformListener> transform_listener;
+  540: 
+  541:     bool received_lidar_data;
+  542: 
+  543:     std::string lidar_topic;
+  544:     std::string base_link;
+  545:     std::string base_scan;
+  546: 
+  547:     std::mutex point_cloud_mutex;
+  548: };
+  549: 
+  550: int main(int argc, char **argv)
+  551: {
+  552:     rclcpp::init(argc, argv);
+  553:     auto node = std::make_shared<LocalMapPubNode>();
+  554:     rclcpp::spin(node);
+  555:     rclcpp::shutdown();
+  556:     return 0;
+  557: }
+
+============================================================
+FILE: src\local_map\include\ellipse.hpp
+============================================================
+    1: #pragma once
+    2: 
+    3: #include <boost/circular_buffer.hpp>
+    4: 
+    5: #include <CGAL/Cartesian.h>
+    6: #include <CGAL/Min_ellipse_2.h>
+    7: #include <CGAL/Min_ellipse_2_traits_2.h>
+    8: #include <CGAL/Exact_rational.h>
+    9: 
+   10: // #include <ros/ros.h>
+   11: #include <visualization_msgs/msg/marker_array.hpp>
+   12: #include <grid_map_core/GridMap.hpp>
+   13: 
+   14: #include <eigen3/Eigen/Dense>
+   15: 
+   16: using Obstacle = std::vector<Eigen::Array2i>;
+   17: 
+   18: struct Ellipse
+   19: {
+   20: 	double semimajor; // Length of semi-major axis
+   21: 	double semiminor; // Length of semi-minor axis
+   22: 	double cx;		  // x-coordinate of center
+   23: 	double cy;		  // y-coordinate of center
+   24: 	double theta;	  // Rotation angle
+   25: 	int label;		  // label of obstacle
+   26: 	double variance;  // variance of ab^1.3
+   27: };
+   28: 
+   29: struct LocalMapParam
+   30: {
+   31: 	float localmap_x_size;
+   32: 	float localmap_y_size;
+   33: 	float resolution;
+   34: };
+   35: 
+   36: using namespace std;
+   37: using namespace Eigen;
+   38: 
+   39: double calculate_dis(const Ellipse &e1, const Ellipse &e2)
+   40: {
+   41: 	return sqrt(pow(e1.cx - e2.cx, 2) + pow(e1.cy - e2.cy, 2));
+   42: }
+   43: 
+   44: /*!MSE function using CGAL tools.
+   45:  * @reference: https://doc.cgal.org/latest/Bounding_volumes/classCGAL_1_1Min__ellipse__2.html
+   46:  */
+   47: typedef CGAL::Exact_rational NT;
+   48: typedef CGAL::Cartesian<NT> K;
+   49: typedef CGAL::Point_2<K> Point;
+   50: typedef CGAL::Min_ellipse_2_traits_2<K> Traits;
+   51: typedef CGAL::Min_ellipse_2<Traits> Min_ellipse;
+   52: bool get_min_area_ellipse(const std::vector<Point> &pts, Ellipse &ellipse)
+   53: {
+   54: 	Min_ellipse me(pts.begin(), pts.end(), true);
+   55: 	if (me.is_degenerate())
+   56: 		return false;
+   57: 	// r*x^2 + s*y^2 + t*x*y + u*x + v*y + w = 0
+   58: 	double r, s, t, u, v, w;
+   59: 	me.ellipse().double_coefficients(r, s, t, u, v, w);
+   60: 	double a = -std::sqrt(2 * (r * v * v + s * u * u - t * u * v + (t * t - 4 * r * s) * w) *
+   61: 						  ((r + s) + std::sqrt((r - s) * (r - s) + t * t))) /
+   62: 			   (t * t - 4 * r * s);
+   63: 	double b = -std::sqrt(2 * (r * v * v + s * u * u - t * u * v + (t * t - 4 * r * s) * w) *
+   64: 						  ((r + s) - std::sqrt((r - s) * (r - s) + t * t))) /
+   65: 			   (t * t - 4 * r * s);
+   66: 	double cx = (2 * s * u - t * v) / (t * t - 4 * r * s);
+   67: 	double cy = (2 * r * v - t * u) / (t * t - 4 * r * s);
+   68: 	double theta;
+   69: 	if (t != 0)
+   70: 		theta = std::atan(1 / t * (s - r - std::sqrt((r - s) * (r - s) + t * t)));
+   71: 	else if (r < s)
+   72: 		theta = 0;
+   73: 	else
+   74: 		theta = M_PI;
+   75: 	if (b > a)
+   76: 	{
+   77: 		swap(a, b);
+   78: 		theta += M_PI / 2;
+   79: 	}
+   80: 	// if (t > 0.001)
+   81: 	//   theta = std::atan(t / (s - r - std::sqrt((r - s) * (r - s) + t * t)));
+   82: 	// else if (r - s < 0.001)
+   83: 	//   theta = 0;
+   84: 	// else
+   85: 	//   theta = M_PI / 2;
+   86: 
+   87: 	ellipse = Ellipse{a, b, cx, cy, theta};
+   88: 	return true;
+   89: }
+   90: 
+   91: Obstacle down_sample_points(const Obstacle &pts, int &x_min, int &y_min, int &x_max, int &y_max)
+   92: {
+   93: 	for (const auto &pt : pts)
+   94: 	{
+   95: 		if (pt(0) < x_min)
+   96: 			x_min = pt(0);
+   97: 		if (pt(1) < y_min)
+   98: 			y_min = pt(1);
+   99: 		if (pt(0) > x_max)
+  100: 			x_max = pt(0);
+  101: 		if (pt(1) > y_max)
+  102: 			y_max = pt(1);
+  103: 	}
+  104: 
+  105: 	int x_up = x_max - 0.1 * (x_max - x_min);
+  106: 	x_up = x_up > x_min ? x_up : x_max;
+  107: 	int x_down = x_min + 0.1 * (x_max - x_min);
+  108: 	x_down = x_down < x_max ? x_down : x_min;
+  109: 	int y_up = y_max - 0.1 * (y_max - y_min);
+  110: 	y_up = y_up > y_min ? y_up : y_max;
+  111: 	int y_down = y_min + 0.1 * (y_max - y_min);
+  112: 	y_down = y_down < y_max ? y_down : y_min;
+  113: 
+  114: 	if (pts.size() > 100)
+  115: 	{
+  116: 		Obstacle ds_pts;
+  117: 		for (const auto &pt : pts)
+  118: 		{
+  119: 			if (pt(0) >= x_down && pt(0) <= x_up && pt(1) >= y_down && pt(1) <= y_up)
+  120: 				continue;
+  121: 
+  122: 			ds_pts.emplace_back(pt);
+  123: 		}
+  124: 		return ds_pts;
+  125: 	}
+  126: 	return pts;
+  127: }
+  128: 
+  129: vector<Ellipse> get_ellipse_array(std::vector<Obstacle> &seg_obs, const grid_map::GridMap &localmap_obs, const LocalMapParam &MapParam)
+  130: {
+  131: 	std::vector<Ellipse> result;
+  132: 	float localmap_x_size = MapParam.localmap_x_size;
+  133: 	float localmap_y_size = MapParam.localmap_y_size;
+  134: 	float resolution = MapParam.resolution;
+  135: 	float _inv_resolution = 1.0 / resolution;
+  136: 
+  137: 	for (const auto &obs : seg_obs)
+  138: 	{
+  139: 		if (obs.size() > 500)
+  140: 			continue;
+  141: 		int x_min = localmap_x_size * _inv_resolution, y_min = localmap_x_size * _inv_resolution, x_max = 0, y_max = 0;
+  142: 		Obstacle ds_pts = down_sample_points(obs, x_min, y_min, x_max, y_max);
+  143: 		if (x_max - x_min > 3 * _inv_resolution || y_max - y_min > 3 * _inv_resolution)
+  144: 			continue;
+  145: 
+  146: 		vector<Point> pts;
+  147: 		for (const auto &pt : ds_pts)
+  148: 		{
+  149: 			if (pt(0) >= localmap_x_size / resolution || pt(1) >= localmap_x_size / resolution)
+  150: 				continue;
+  151: 
+  152: 			Vector3d pos;
+  153: 			localmap_obs.getPosition3("elevation", pt, pos);
+  154: 			pts.emplace_back(pos(0), pos(1));
+  155: 		}
+  156: 
+  157: 		Ellipse ellipse;
+  158: 		if (!get_min_area_ellipse(pts, ellipse))
+  159: 		{
+  160: 			Eigen::Array2i grid_center((x_max + x_min) / 2, (y_min + y_max) / 2);
+  161: 
+  162: 			float radius = sqrt((x_max - x_min) * (x_max - x_min) + (y_max - y_min) * (y_max - y_min)) * resolution / 2;
+  163: 			Vector3d pos;
+  164: 			localmap_obs.getPosition3("gradient_map", grid_center, pos);
+  165: 			ellipse.cx = pos(0);
+  166: 			ellipse.cy = pos(1);
+  167: 			ellipse.semimajor = max(radius, 2 * resolution);
+  168: 			ellipse.semiminor = resolution;
+  169: 			ellipse.theta = (x_max - x_min == 0) ? M_PI / 2 : (std::atan((y_max - y_min) / (x_max - x_min)) + M_PI / 2);
+  170: 		}
+  171: 
+  172: 		if (ellipse.semimajor <= 20 && ellipse.semiminor <= 20 && (!std::isnan(ellipse.cx)) && (!std::isnan(ellipse.cy)))
+  173: 			result.push_back(ellipse);
+  174: 	}
+  175: 	return result;
+  176: }
+  177: 
+  178: void ab_variance_calculation(vector<Ellipse> &input_vector)
+  179: {
+  180: 	static vector<boost::circular_buffer<Eigen::Vector2d>> list;
+  181: 	for (auto &input : input_vector)
+  182: 	{
+  183: 		int label = input.label;
+  184: 		int current_size = list.size();
+  185: 		if (current_size < label)
+  186: 		{
+  187: 			list.resize(label);
+  188: 			for (size_t i = current_size; i < label; i++)
+  189: 				list[i].set_capacity(10);
+  190: 		}
+  191: 		list[label - 1].push_back(Eigen::Vector2d(input.semimajor, input.semiminor));
+  192: 		size_t list_size = list[label - 1].size();
+  193: 		MatrixXd vac_mat(2, list_size);
+  194: 		for (size_t i = 0; i < list_size; i++)
+  195: 			vac_mat.col(i) = list[label - 1][i];
+  196: 		MatrixXd zeroMeanMat = vac_mat.colwise() - vac_mat.rowwise().mean();
+  197: 		MatrixXd covMat = (zeroMeanMat * zeroMeanMat.transpose()) / list_size;
+  198: 		double variance = pow(covMat.trace(), 1.3);
+  199: 		if (list_size < 3)
+  200: 			variance += 0.0005 * (3 - list_size);
+  201: 		input.variance = variance;
+  202: 	}
+  203: }
+  204: 
+  205: // void visEllipse(const std::vector<Ellipse> &obs_ellipses, ros::Publisher &_Ellipses_vis_pub)
+  206: // {
+  207: // 	// ellipse
+  208: // 	visualization_msgs::MarkerArray ellipse_vis;
+  209: 
+  210: // 	visualization_msgs::Marker shape_vis;
+  211: // 	shape_vis.header.frame_id = "world";
+  212: // 	shape_vis.header.stamp = ros::Time::now();
+  213: // 	shape_vis.ns = "ellipse";
+  214: // 	shape_vis.type = visualization_msgs::Marker::CYLINDER;
+  215: // 	shape_vis.action = visualization_msgs::Marker::ADD;
+  216: // 	shape_vis.lifetime = ros::Duration(0.15);
+  217: 
+  218: // 	// number
+  219: // 	visualization_msgs::Marker text_vis;
+  220: // 	text_vis.header.frame_id = "world";
+  221: // 	text_vis.header.stamp = ros::Time::now();
+  222: // 	text_vis.ns = "text";
+  223: // 	text_vis.action = visualization_msgs::Marker::ADD;
+  224: // 	text_vis.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
+  225: // 	text_vis.lifetime = ros::Duration(0.1);
+  226: // 	text_vis.scale.z = 0.3;
+  227: // 	text_vis.color.r = 1;
+  228: // 	text_vis.color.g = 1;
+  229: // 	text_vis.color.b = 1;
+  230: // 	text_vis.color.a = 1;
+  231: 
+  232: // 	for (size_t i = 0; i < obs_ellipses.size(); i++)
+  233: // 	{
+  234: // 		shape_vis.color.a = 0.9;
+  235: // 		if (obs_ellipses[i].variance < 0.0007)
+  236: // 		{
+  237: // 			shape_vis.color.r = 0;
+  238: // 			shape_vis.color.g = 0;
+  239: // 			shape_vis.color.b = 1;
+  240: // 		}
+  241: // 		else if (obs_ellipses[i].variance > 0.005)
+  242: // 		{
+  243: // 			shape_vis.color.r = 1;
+  244: // 			shape_vis.color.g = 0;
+  245: // 			shape_vis.color.b = 0;
+  246: // 		}
+  247: // 		else
+  248: // 		{
+  249: // 			float dt = (obs_ellipses[i].variance - 0.0007) / (0.005 - 0.0007);
+  250: // 			if (dt > 0.5)
+  251: // 			{
+  252: // 				shape_vis.color.r = 1;
+  253: // 				shape_vis.color.g = 1 - dt;
+  254: // 				shape_vis.color.b = 1 - dt;
+  255: // 			}
+  256: // 			else
+  257: // 			{
+  258: // 				shape_vis.color.r = dt;
+  259: // 				shape_vis.color.g = dt;
+  260: // 				shape_vis.color.b = 1;
+  261: // 			}
+  262: // 		}
+  263: 
+  264: // 		shape_vis.id = i;
+  265: // 		shape_vis.pose.orientation.x = 0.0;
+  266: // 		shape_vis.pose.orientation.y = 0.0;
+  267: // 		shape_vis.pose.orientation.z = sin(obs_ellipses[i].theta / 2);
+  268: // 		shape_vis.pose.orientation.w = cos(obs_ellipses[i].theta / 2);
+  269: // 		shape_vis.pose.position.x = obs_ellipses[i].cx;
+  270: // 		shape_vis.pose.position.y = obs_ellipses[i].cy;
+  271: // 		shape_vis.pose.position.z = -0.0;
+  272: // 		shape_vis.scale.x = 2 * obs_ellipses[i].semimajor;
+  273: // 		shape_vis.scale.y = 2 * obs_ellipses[i].semiminor;
+  274: // 		shape_vis.scale.z = 0.75;
+  275: 
+  276: // 		text_vis.id = obs_ellipses[i].label;
+  277: 
+  278: // 		text_vis.text = to_string(obs_ellipses[i].label);
+  279: // 		text_vis.pose.position.x = obs_ellipses[i].cx - 0.3;
+  280: // 		text_vis.pose.position.y = obs_ellipses[i].cy;
+  281: // 		text_vis.pose.position.z = 0.2;
+  282: 
+  283: // 		// publish
+  284: // 		ellipse_vis.markers.push_back(shape_vis);
+  285: // 		ellipse_vis.markers.push_back(text_vis);
+  286: // 	}
+  287: 
+  288: // 	_Ellipses_vis_pub.publish(ellipse_vis);
+  289: // }
+
+============================================================
+FILE: src\obs_param\package.xml
+============================================================
+    1: <?xml version="1.0"?>
+    2: <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+    3: <package format="3">
+    4:   <name>obs_param</name>
+    5:   <version>0.0.0</version>
+    6:   <description>TODO: Package description</description>
+    7:   <maintainer email="c@todo.todo">c</maintainer>
+    8:   <license>Apache-2.0</license>
+    9: 
+   10:   <buildtool_depend>ament_cmake</buildtool_depend>
+   11: 
+   12:   <depend>rclcpp</depend>
+   13:   <depend>std_msgs</depend>
+   14:   <depend>visualization_msgs</depend>
+   15:   <depend>eigen</depend>
+   16: 
+   17:   <test_depend>ament_lint_auto</test_depend>
+   18:   <test_depend>ament_lint_common</test_depend>
+   19: 
+   20:   <export>
+   21:     <build_type>ament_cmake</build_type>
+   22:   </export>
+   23: </package>
+
+============================================================
+FILE: src\obs_param\src\obs_kf.cpp
+============================================================
+    1: #include <rclcpp/rclcpp.hpp>
+    2: #include <std_msgs/msg/float32_multi_array.hpp>
+    3: #include <visualization_msgs/msg/marker_array.hpp>
+    4: 
+    5: #include <chrono>
+    6: #include <eigen3/Eigen/Dense>
+    7: 
+    8: #include "kalman.h"
+    9: 
+   10: using namespace std;
+   11: using namespace Eigen;
+   12: 
+   13: const size_t obs_kf_buffer_size = 100;
+   14: 
+   15: // 妞渾瀹氫箟
+   16: struct Ellipse
+   17: {
+   18:     double semimajor; // Length of semi-major axis
+   19:     double semiminor; // Length of semi-minor axis
+   20:     double cx;        // x-coordinate of center
+   21:     double cy;        // y-coordinate of center
+   22:     double theta;     // Rotation angle
+   23: };
+   24: 
+   25: // 闅滅鐗╁畾涔?
+   26: struct obs_param
+   27: {
+   28:     float x = 0.0;
+   29:     float y = 0.0;
+   30:     float a = 0.0;
+   31:     float b = 0.0;
+   32:     float theta = 0.0;
+   33:     float mea_cov;
+   34: };
+   35: 
+   36: // 澧炲姞涓€涓湭浣跨敤娆℃暟璁℃暟锛岄暱鏃堕棿涓嶄娇鐢ㄥ垯閲嶇疆
+   37: class obs_kf
+   38: {
+   39: public:
+   40:     int N;
+   41:     int lastTimeUsed;
+   42:     float T;
+   43: 
+   44:     Kalman ka;
+   45:     std::vector<obs_param> param_list;
+   46:     std::vector<obs_param> pred_list;
+   47:     Eigen::VectorXd x;
+   48:     Eigen::MatrixXd P0;
+   49:     Eigen::MatrixXd Q;
+   50:     Eigen::MatrixXd R;
+   51:     Eigen::MatrixXd A;
+   52:     Eigen::MatrixXd B;
+   53:     Eigen::MatrixXd H;
+   54:     Eigen::VectorXd z0;
+   55:     Eigen::VectorXd u_v;
+   56: 
+   57:     void obs_predict();
+   58:     obs_kf();
+   59:     void reset();
+   60: } _obs_kf[obs_kf_buffer_size];
+   61: 
+   62: obs_kf::obs_kf() : N(25)
+   63: {
+   64:     ka.m_StateSize = 9;
+   65:     ka.m_MeaSize = 5;
+   66:     ka.m_USize = 9;
+   67: 
+   68:     lastTimeUsed = 0;
+   69: 
+   70:     T = 0.25;
+   71: 
+   72:     x.resize(9);
+   73:     x.setZero();
+   74: 
+   75:     float P0_cov = 0.025;
+   76: 
+   77:     P0.resize(9, 9);
+   78:     P0.setIdentity();
+   79:     P0 *= P0_cov;
+   80: 
+   81:     float Q_cov = 0.00008;
+   82: 
+   83:     Q.resize(9, 9);
+   84:     Q.setIdentity();
+   85:     Q *= Q_cov;
+   86: 
+   87:     float R_cov = 0.000003; // 浠跨湡 0.00005  瀹炵墿  0.000003
+   88: 
+   89:     R.resize(5, 5);
+   90:     R.setZero();
+   91: 
+   92:     R(0, 0) = R_cov;
+   93:     R(1, 1) = R_cov;
+   94:     R(2, 2) = 10 * R_cov;
+   95:     R(3, 3) = 10 * R_cov;
+   96:     R(4, 4) = 0.00000001 * R_cov;
+   97: 
+   98:     A.resize(9, 9);
+   99:     A.setIdentity();
+  100:     A(0, 5) = A(1, 6) = T;
+  101: 
+  102:     B.resize(9, 9);
+  103:     B.setZero();
+  104: 
+  105:     H.resize(5, 9);
+  106:     H.setIdentity();
+  107: 
+  108:     z0.resize(5);
+  109:     z0.setZero();
+  110: 
+  111:     u_v.resize(9);
+  112:     u_v.setZero();
+  113: 
+  114:     ka.Init_Par(x, P0, R, Q, A, B, H, u_v);
+  115: }
+  116: 
+  117: void obs_kf::reset()
+  118: {
+  119:     ka.m_StateSize = 9;
+  120:     ka.m_MeaSize = 5;
+  121:     ka.m_USize = 9;
+  122: 
+  123:     lastTimeUsed = 0;
+  124: 
+  125:     param_list.clear();
+  126:     pred_list.clear();
+  127: 
+  128:     T = 0.1;
+  129: 
+  130:     x.resize(9);
+  131:     x.setZero();
+  132: 
+  133:     float P0_cov = 0.025;
+  134: 
+  135:     P0.resize(9, 9);
+  136:     P0.setIdentity();
+  137:     P0 *= P0_cov;
+  138: 
+  139:     float Q_cov = 0.00008;
+  140: 
+  141:     Q.resize(9, 9);
+  142:     Q.setIdentity();
+  143:     Q *= Q_cov;
+  144: 
+  145:     float R_cov = 0.000003; // 浠跨湡 0.00005  瀹炵墿  0.000003
+  146: 
+  147:     R.resize(5, 5);
+  148:     R.setZero();
+  149: 
+  150:     R(0, 0) = R_cov;
+  151:     R(1, 1) = R_cov;
+  152:     R(2, 2) = 10 * R_cov;
+  153:     R(3, 3) = 10 * R_cov;
+  154:     R(4, 4) = 0.00000001 * R_cov;
+  155: 
+  156:     A.resize(9, 9);
+  157:     A.setIdentity();
+  158:     A(0, 5) = A(1, 6) = T;
+  159: 
+  160:     B.resize(9, 9);
+  161:     B.setZero();
+  162: 
+  163:     H.resize(5, 9);
+  164:     H.setIdentity();
+  165: 
+  166:     z0.resize(5);
+  167:     z0.setZero();
+  168: 
+  169:     u_v.resize(9);
+  170:     u_v.setZero();
+  171: 
+  172:     ka.Init_Par(x, P0, R, Q, A, B, H, u_v);
+  173: }
+  174: 
+  175: void obs_kf::obs_predict()
+  176: {
+  177:     int num = param_list.size();
+  178:     if (num == 0)
+  179:         return;
+  180: 
+  181:     if (num == 1)
+  182:     {
+  183:         ka.m_x << param_list[0].x, param_list[0].y, param_list[0].a, param_list[0].b, param_list[0].theta, 0, 0, 0, 0;
+  184:         ka.m_P = P0;
+  185:     }
+  186:     else
+  187:     {
+  188:         float _mea_cov_min = 0.005;
+  189:         float _mea_cov_max = 0.05;
+  190:         float _k_cov_min = 1;
+  191:         float _k_cov_max = 3000;
+  192:         float _mea_cov = min(max(param_list.back().mea_cov, _mea_cov_min), _mea_cov_max);
+  193:         float _k = log10(_mea_cov / _mea_cov_min) / log10(_mea_cov_max / _mea_cov_min);
+  194:         float _k_cov = pow(_k_cov_max, _k) * pow(_k_cov_min, 1 - _k);
+  195: 
+  196:         ka.m_R(0, 0) = _k_cov * R(0, 0);
+  197:         ka.m_R(1, 1) = _k_cov * R(1, 1);
+  198: 
+  199:         VectorXd z(5);
+  200:         z << param_list.back().x, param_list.back().y, param_list.back().a, param_list.back().b, param_list.back().theta;
+  201:         param_list.erase(param_list.begin());
+  202: 
+  203:         ka.Predict_State();
+  204:         ka.Predict_Cov();
+  205:         ka.Mea_Resd(z);
+  206:         ka.Cal_Gain();
+  207:         ka.Update_State();
+  208:         ka.Update_Cov();
+  209: 
+  210:         Kalman ka_tmp = ka;
+  211: 
+  212:         pred_list.clear();
+  213:         for (int i = 0; i < N; i++)
+  214:         {
+  215:             ka_tmp.Predict_State();
+  216:             ka_tmp.Predict_Cov();
+  217:             obs_param pred;
+  218:             float x_conf = 0.95 * sqrt(ka_tmp.m_P(0, 0));
+  219:             float y_conf = 0.95 * sqrt(ka_tmp.m_P(1, 1));
+  220:             float a_conf = 0.95 * sqrt(ka_tmp.m_P(2, 2));
+  221:             float b_conf = 0.95 * sqrt(ka_tmp.m_P(3, 3));
+  222:             float pos_conf = max(x_conf, y_conf);
+  223:             float ab_conf = max(a_conf, b_conf);
+  224: 
+  225:             pred.x = ka_tmp.m_x(0);
+  226:             pred.y = ka_tmp.m_x(1);
+  227:             pred.a = ka_tmp.m_x(2) + pos_conf + ab_conf;
+  228:             pred.b = ka_tmp.m_x(3) + pos_conf + ab_conf;
+  229:             pred.theta = ka.m_x(4);
+  230: 
+  231:             pred_list.push_back(pred);
+  232:         }
+  233:     }
+  234: }
+  235: 
+  236: class ObsKfNode : public rclcpp::Node
+  237: {
+  238: public:
+  239:     ObsKfNode() : Node("obs_param_node")
+  240:     {
+  241:         unused_clear_time = 3;
+  242:         obs_sub_ = this->create_subscription<std_msgs::msg::Float32MultiArray>(
+  243:             "/for_obs_track", 1, std::bind(&ObsKfNode::obscb, this, std::placeholders::_1));
+  244:         obs_pub_ = this->create_publisher<std_msgs::msg::Float32MultiArray>("/obs_predict_pub", 1);
+  245:         obs_vis_pub_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("/obs_predict_vis_pub", 1);
+  246:     }
+  247: 
+  248: private:
+  249:     void obscb(const std_msgs::msg::Float32MultiArray::SharedPtr msg)
+  250:     {
+  251:         RCLCPP_INFO(this->get_logger(), "[node] receive the obs track");
+  252:         if (msg->data.empty())
+  253:             return;
+  254: 
+  255:         int num = msg->data.size() / 7;
+  256:         RCLCPP_INFO(this->get_logger(), "total %d obstacle", num);
+  257: 
+  258:         std_msgs::msg::Float32MultiArray obs_pub; // 澶勭悊鍚庣殑obstacles淇℃伅
+  259: 
+  260:         // visualization_msgs::msg::MarkerArray ellipses_array;
+  261:         vector<Ellipse> ellipses_array;
+  262: 
+  263:         for(int i = 0; i < obs_kf_buffer_size; ++i)
+  264:         {_obs_kf[i].lastTimeUsed ++;}
+  265: 
+  266:         for (int i = 0; i < num; i++)
+  267:         {
+  268:             int flag = msg->data[7 * i + 5] - 1;
+  269:             if(flag >= obs_kf_buffer_size || flag < 0)
+  270:                 RCLCPP_INFO(this->get_logger(), "label overflow %d !!!!!", flag);
+  271: 
+  272:             obs_param _obs_tmp;
+  273:             _obs_tmp.x = msg->data[7 * i];
+  274:             _obs_tmp.y = msg->data[7 * i + 1];
+  275:             _obs_tmp.a = msg->data[7 * i + 2];
+  276:             _obs_tmp.b = msg->data[7 * i + 3];
+  277:             _obs_tmp.theta = msg->data[7 * i + 4];
+  278:             _obs_tmp.mea_cov = msg->data[7 * i + 6];
+  279: 
+  280:             if(_obs_kf[flag].lastTimeUsed > unused_clear_time)
+  281:                 _obs_kf[flag].reset();
+  282:             else
+  283:                 _obs_kf[flag].lastTimeUsed = 0;
+  284:             _obs_kf[flag].param_list.push_back(_obs_tmp);
+  285: 
+  286:             curve_fitting(_obs_kf[flag], obs_pub, ellipses_array);
+  287:         }
+  288: 
+  289:         obs_pub_->publish(obs_pub);
+  290:         visEllipse(ellipses_array);
+  291:     }
+  292: 
+  293:     void curve_fitting(obs_kf &obs, std_msgs::msg::Float32MultiArray &obs_pub, vector<Ellipse> &ellipses_array)
+  294:     {
+  295:         if (obs.param_list.empty())
+  296:             return;
+  297: 
+  298:         obs.obs_predict();
+  299: 
+  300:         for (int i = 0; i < obs.pred_list.size(); i++)
+  301:         {
+  302:             Ellipse ellipse;
+  303:             ellipse.cx = obs.pred_list[i].x;
+  304:             ellipse.cy = obs.pred_list[i].y;
+  305:             ellipse.semimajor = obs.pred_list[i].a;
+  306:             ellipse.semiminor = obs.pred_list[i].b;
+  307:             ellipse.theta = obs.pred_list[i].theta;
+  308:             ellipses_array.push_back(ellipse);
+  309: 
+  310:             obs_pub.data.push_back(obs.pred_list[i].x);
+  311:             obs_pub.data.push_back(obs.pred_list[i].y);
+  312:             obs_pub.data.push_back(obs.pred_list[i].a);
+  313:             obs_pub.data.push_back(obs.pred_list[i].b);
+  314:             obs_pub.data.push_back(obs.pred_list[i].theta);
+  315:         }
+  316:     }
+  317: 
+  318:     void visEllipse(const std::vector<Ellipse> &obs_ellipses)
+  319:     {
+  320:         visualization_msgs::msg::MarkerArray ellipse_vis;
+  321: 
+  322:         for (const auto &ellipse : obs_ellipses)
+  323:         {
+  324:             visualization_msgs::msg::Marker mk;
+  325:             mk.header.frame_id = "world";
+  326:             mk.header.stamp = this->now(); 
+  327:             mk.ns = "ellipse";
+  328:             mk.id = ellipse_vis.markers.size();
+  329:             mk.type = visualization_msgs::msg::Marker::CYLINDER;
+  330:             mk.action = visualization_msgs::msg::Marker::ADD;
+  331:             mk.lifetime = rclcpp::Duration::from_seconds(0.5); 
+  332: 
+  333:             mk.pose.position.x = ellipse.cx;
+  334:             mk.pose.position.y = ellipse.cy;
+  335:             mk.pose.position.z = -0.3;
+  336:             mk.pose.orientation.x = 0.0;
+  337:             mk.pose.orientation.y = 0.0;
+  338:             mk.pose.orientation.z = sin(ellipse.theta / 2);
+  339:             mk.pose.orientation.w = cos(ellipse.theta / 2);
+  340: 
+  341:             mk.scale.x = 2 * ellipse.semimajor;
+  342:             mk.scale.y = 2 * ellipse.semiminor;
+  343:             mk.scale.z = 0.7;
+  344: 
+  345:             mk.color.a = 0.4;
+  346:             mk.color.r = 0.0;
+  347:             mk.color.g = 1.0;
+  348:             mk.color.b = 0.0;
+  349: 
+  350:             ellipse_vis.markers.push_back(mk);
+  351:         }
+  352: 
+  353:         obs_vis_pub_->publish(ellipse_vis);
+  354:     }
+  355: 
+  356:     // Publishers and subscribers
+  357:     rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr obs_sub_;
+  358:     rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr obs_pub_;
+  359:     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr obs_vis_pub_;
+  360:     int unused_clear_time;
+  361: };
+  362: 
+  363: int main(int argc, char **argv)
+  364: {
+  365:     rclcpp::init(argc, argv);
+  366:     auto node = std::make_shared<ObsKfNode>();
+  367:     rclcpp::spin(node);
+  368:     rclcpp::shutdown();
+  369:     return 0;
+  370: }
+
+============================================================
+FILE: src\obs_param\include\kalman.h
+============================================================
+    1: #include <eigen3/Eigen/Dense>
+    2: 
+    3: class Kalman
+    4: {
+    5: public:
+    6:   int m_StateSize;
+    7:   int m_MeaSize;
+    8:   int m_USize;
+    9:   Eigen::VectorXd m_x;
+   10:   Eigen::VectorXd m_u;
+   11:   Eigen::VectorXd m_z;
+   12:   Eigen::MatrixXd m_A;
+   13:   Eigen::MatrixXd m_B;
+   14:   Eigen::MatrixXd m_P;
+   15:   Eigen::MatrixXd m_H;
+   16:   Eigen::MatrixXd m_R;
+   17:   Eigen::MatrixXd m_Q;
+   18:   Eigen::MatrixXd m_iden_mat;
+   19: 
+   20: public:
+   21:   Kalman() = default;
+   22:   Kalman(int statesize, int measize, int usize) : m_StateSize(statesize), m_MeaSize(measize), m_USize(usize)
+   23:   {
+   24:     m_x.resize(statesize);
+   25:     m_x.setZero();
+   26: 
+   27:     m_u.resize(usize);
+   28:     m_u.setZero();
+   29: 
+   30:     m_z.resize(measize);
+   31:     m_z.setZero();
+   32: 
+   33:     m_A.resize(statesize, statesize);
+   34:     m_A.setIdentity();
+   35: 
+   36:     m_B.resize(statesize, usize);
+   37:     m_B.setZero();
+   38: 
+   39:     m_P.resize(statesize, statesize);
+   40:     m_P.setIdentity();
+   41: 
+   42:     m_H.resize(measize, statesize);
+   43:     m_H.setZero();
+   44: 
+   45:     m_R.resize(measize, measize);
+   46:     m_R.setZero();
+   47: 
+   48:     m_Q.resize(statesize, statesize);
+   49:     m_Q.setZero();
+   50: 
+   51:     m_iden_mat.resize(statesize, statesize);
+   52:     m_iden_mat.setIdentity();
+   53:   }
+   54: 
+   55:   void Init_Par(Eigen::VectorXd& x, Eigen::MatrixXd& P, Eigen::MatrixXd& R, Eigen::MatrixXd& Q, Eigen::MatrixXd& A,
+   56:                 Eigen::MatrixXd& B, Eigen::MatrixXd& H, Eigen::VectorXd& u);
+   57:   void Predict_State();
+   58:   void Predict_Cov();
+   59:   Eigen::VectorXd Mea_Resd(const Eigen::VectorXd& z);
+   60:   Eigen::MatrixXd Cal_Gain();
+   61:   void Update_State();
+   62:   void Update_Cov();
+   63: };
+
+============================================================
+FILE: src\scene\config\config.yaml
+============================================================
+    1: /**:
+    2:   ros__parameters:
+    3:     cylinder_num: 5
+    4: 
+    5:     x_0: 2.0
+    6:     y_0: 2.0
+    7:     z_0: 0.25
+    8:     vx_0: 0.0
+    9:     # vy_0: 0.0
+   10:     vy_0: -0.1
+   11: 
+   12:     x_1: -2.0
+   13:     y_1: 2.0
+   14:     z_1: 0.25
+   15:     vx_1: 0.1
+   16:     # vy_1: 0.0
+   17:     vy_1: -0.1
+   18: 
+   19:     x_2: 2.0
+   20:     y_2: -2.0
+   21:     z_2: 0.25
+   22:     vx_2: 0.1
+   23:     # vy_2: 0.0
+   24:     vy_2: 0.1
+   25:     
+   26:     x_3: -2.0
+   27:     y_3: -2.0
+   28:     z_3: 0.25
+   29:     vx_3: 0.0
+   30:     # vy_3: 0.5
+   31:     vy_3: 0.5
+   32: 
+   33:     x_4: -2.0
+   34:     y_4: -5.0
+   35:     z_4: 0.25
+   36:     vx_4: 0.0
+   37:     # vy_4: 0.0
+   38:     vy_4: -0.5
+
+============================================================
+FILE: src\scene\launch\core_smoke.launch.py
+============================================================
+    1: from launch import LaunchDescription
+    2: from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
+    3: from launch.conditions import IfCondition
+    4: from launch.launch_description_sources import PythonLaunchDescriptionSource
+    5: from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+    6: from launch_ros.actions import Node
+    7: from launch_ros.parameter_descriptions import ParameterValue
+    8: from ament_index_python.packages import get_package_share_directory
+    9: 
+   10: 
+   11: def generate_launch_description():
+   12:     use_sim_time = LaunchConfiguration('use_sim_time')
+   13:     start_x = LaunchConfiguration('start_x')
+   14:     start_y = LaunchConfiguration('start_y')
+   15:     end_x = LaunchConfiguration('end_x')
+   16:     end_y = LaunchConfiguration('end_y')
+   17:     base_frame = LaunchConfiguration('base_frame')
+   18:     sensor_frame = LaunchConfiguration('sensor_frame')
+   19:     launch_local_map = LaunchConfiguration('launch_local_map')
+   20:     launch_obs_param = LaunchConfiguration('launch_obs_param')
+   21:     launch_local_planner = LaunchConfiguration('launch_local_planner')
+   22:     publish_synthetic_obstacle = LaunchConfiguration('publish_synthetic_obstacle')
+   23: 
+   24:     local_map_share = get_package_share_directory('local_map')
+   25:     local_planner_share = get_package_share_directory('local_planner')
+   26: 
+   27:     local_map_params_file = PathJoinSubstitution([local_map_share, 'config', 'config.yaml'])
+   28:     local_planner_launch_file = PathJoinSubstitution(
+   29:         [local_planner_share, 'launch', 'local_planner_launch.py'])
+   30:     synthetic_obstacle = []
+   31:     for _ in range(25):
+   32:         synthetic_obstacle.extend([-8.0, 2.5, 0.6, 0.3, 0.785398])
+   33:     synthetic_obstacle_message = '{data: [' + ', '.join(
+   34:         str(value) for value in synthetic_obstacle) + ']}'
+   35: 
+   36:     return LaunchDescription([
+   37:         DeclareLaunchArgument(
+   38:             'use_sim_time',
+   39:             default_value='false',
+   40:             description='Core smoke test uses wall time by default.'),
+   41:         DeclareLaunchArgument(
+   42:             'start_x',
+   43:             default_value='-10.0',
+   44:             description='Robot/global path start x coordinate.'),
+   45:         DeclareLaunchArgument(
+   46:             'start_y',
+   47:             default_value='0.0',
+   48:             description='Robot/global path start y coordinate.'),
+   49:         DeclareLaunchArgument(
+   50:             'end_x',
+   51:             default_value='9.0',
+   52:             description='Global path end x coordinate.'),
+   53:         DeclareLaunchArgument(
+   54:             'end_y',
+   55:             default_value='0.0',
+   56:             description='Global path end y coordinate.'),
+   57:         DeclareLaunchArgument(
+   58:             'base_frame',
+   59:             default_value='base_link',
+   60:             description='Robot base frame for controller and local map.'),
+   61:         DeclareLaunchArgument(
+   62:             'sensor_frame',
+   63:             default_value='base_scan',
+   64:             description='Synthetic lidar frame for local_map startup checks.'),
+   65:         DeclareLaunchArgument(
+   66:             'launch_local_map',
+   67:             default_value='true',
+   68:             description='Start local_map even without real point clouds; it should wait safely.'),
+   69:         DeclareLaunchArgument(
+   70:             'launch_obs_param',
+   71:             default_value='true',
+   72:             description='Start obstacle Kalman predictor.'),
+   73:         DeclareLaunchArgument(
+   74:             'launch_local_planner',
+   75:             default_value='true',
+   76:             description='Start MPC/D-CBF local planner and controller.'),
+   77:         DeclareLaunchArgument(
+   78:             'publish_synthetic_obstacle',
+   79:             default_value='false',
+   80:             description='Publish one synthetic predicted ellipse train on /obs_predict_pub.'),
+   81: 
+   82:         Node(
+   83:             package='tf2_ros',
+   84:             executable='static_transform_publisher',
+   85:             name='smoke_world_base_tf',
+   86:             arguments=[
+   87:                 '--x', start_x, '--y', start_y, '--z', '0.0',
+   88:                 '--qx', '0.0', '--qy', '0.0', '--qz', '0.0', '--qw', '1.0',
+   89:                 '--frame-id', 'world', '--child-frame-id', base_frame,
+   90:             ]),
+   91:         Node(
+   92:             package='tf2_ros',
+   93:             executable='static_transform_publisher',
+   94:             name='smoke_world_sensor_tf',
+   95:             arguments=[
+   96:                 '--x', start_x, '--y', start_y, '--z', '0.2',
+   97:                 '--qx', '0.0', '--qy', '0.0', '--qz', '0.0', '--qw', '1.0',
+   98:                 '--frame-id', 'world', '--child-frame-id', sensor_frame,
+   99:             ]),
+  100: 
+  101:         Node(
+  102:             package='global_path_publisher',
+  103:             executable='global_path_publisher',
+  104:             name='global_path_publisher',
+  105:             output='screen',
+  106:             parameters=[{
+  107:                 'use_sim_time': ParameterValue(use_sim_time, value_type=bool),
+  108:                 'start_x': ParameterValue(start_x, value_type=float),
+  109:                 'start_y': ParameterValue(start_y, value_type=float),
+  110:                 'end_x': ParameterValue(end_x, value_type=float),
+  111:                 'end_y': ParameterValue(end_y, value_type=float),
+  112:             }]),
+  113: 
+  114:         Node(
+  115:             package='local_map',
+  116:             executable='local_map',
+  117:             name='local_map',
+  118:             output='screen',
+  119:             condition=IfCondition(launch_local_map),
+  120:             parameters=[
+  121:                 local_map_params_file,
+  122:                 {
+  123:                     'use_sim_time': ParameterValue(use_sim_time, value_type=bool),
+  124:                     'base_link': base_frame,
+  125:                     'base_scan': sensor_frame,
+  126:                 },
+  127:             ]),
+  128: 
+  129:         Node(
+  130:             package='obs_param',
+  131:             executable='obs_kf',
+  132:             name='obs_kf',
+  133:             output='screen',
+  134:             condition=IfCondition(launch_obs_param),
+  135:             parameters=[{'use_sim_time': ParameterValue(use_sim_time, value_type=bool)}]),
+  136: 
+  137:         IncludeLaunchDescription(
+  138:             PythonLaunchDescriptionSource(local_planner_launch_file),
+  139:             condition=IfCondition(launch_local_planner),
+  140:             launch_arguments={
+  141:                 'use_sim_time': use_sim_time,
+  142:                 'parent_frame': 'world',
+  143:                 'child_frame': base_frame,
+  144:             }.items()),
+  145: 
+  146:         ExecuteProcess(
+  147:             condition=IfCondition(publish_synthetic_obstacle),
+  148:             cmd=[
+  149:                 'ros2', 'topic', 'pub', '--rate', '2', '/obs_predict_pub',
+  150:                 'std_msgs/msg/Float32MultiArray', synthetic_obstacle_message,
+  151:             ],
+  152:             output='screen'),
+  153:     ])
+
+============================================================
+FILE: src\scene\launch\sim.launch.py
+============================================================
+    1: from launch import LaunchDescription
+    2: from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+    3: from launch.conditions import IfCondition
+    4: from launch.launch_description_sources import PythonLaunchDescriptionSource
+    5: from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution, PythonExpression
+    6: from launch_ros.actions import Node
+    7: from launch_ros.parameter_descriptions import ParameterValue
+    8: from ament_index_python.packages import get_package_share_directory
+    9: 
+   10: 
+   11: def prefixed_turtlebot_name(model_config, suffix):
+   12:     return PythonExpression(["'turtlebot3_' + '", model_config, "' + '", suffix, "'"])
+   13: 
+   14: 
+   15: def generate_launch_description():
+   16:     use_sim_time = LaunchConfiguration('use_sim_time')
+   17:     gui = LaunchConfiguration('gui')
+   18:     rviz = LaunchConfiguration('rviz')
+   19:     world = LaunchConfiguration('world')
+   20:     turtlebot3_model = LaunchConfiguration('turtlebot3_model')
+   21:     robot_entity_name = LaunchConfiguration('robot_entity_name')
+   22:     x_pose = LaunchConfiguration('x_pose')
+   23:     y_pose = LaunchConfiguration('y_pose')
+   24:     lidar_topic = LaunchConfiguration('lidar_topic')
+   25:     base_frame = LaunchConfiguration('base_frame')
+   26:     sensor_frame = LaunchConfiguration('sensor_frame')
+   27:     local_map_params_file = LaunchConfiguration('local_map_params_file')
+   28:     launch_robot = LaunchConfiguration('launch_robot')
+   29:     launch_local_planner = LaunchConfiguration('launch_local_planner')
+   30:     enable_odom_tf = LaunchConfiguration('enable_odom_tf')
+   31: 
+   32:     scene_share = get_package_share_directory('scene')
+   33:     turtlebot3_share = get_package_share_directory('turtlebot3_gazebo')
+   34:     local_planner_share = get_package_share_directory('local_planner')
+   35: 
+   36:     scene_launch_file = PathJoinSubstitution([scene_share, 'launch', 'start.launch.py'])
+   37:     movetest_launch_file = PathJoinSubstitution([scene_share, 'launch', 'move_test.launch.py'])
+   38:     local_planner_launch_file = PathJoinSubstitution([
+   39:         local_planner_share, 'launch', 'local_planner_launch.py'])
+   40: 
+   41:     robot_sdf_path = PathJoinSubstitution([
+   42:         turtlebot3_share,
+   43:         'models',
+   44:         prefixed_turtlebot_name(turtlebot3_model, '_velodyne'),
+   45:         'model.sdf',
+   46:     ])
+   47:     robot_urdf_path = PathJoinSubstitution([
+   48:         turtlebot3_share,
+   49:         'urdf',
+   50:         prefixed_turtlebot_name(turtlebot3_model, '.urdf'),
+   51:     ])
+   52:     rviz_config_path = PathJoinSubstitution([scene_share, 'rviz', 'rviz_config.rviz'])
+   53: 
+   54:     return LaunchDescription([
+   55:         DeclareLaunchArgument(
+   56:             'world',
+   57:             default_value=PathJoinSubstitution([scene_share, 'worlds', 'world1.world']),
+   58:             description='Gazebo Classic world file to load.'),
+   59:         DeclareLaunchArgument(
+   60:             'use_sim_time',
+   61:             default_value='true',
+   62:             description='Use Gazebo /clock for all launched ROS nodes.'),
+   63:         DeclareLaunchArgument(
+   64:             'gui',
+   65:             default_value='true',
+   66:             description='Whether to run Gazebo GUI.'),
+   67:         DeclareLaunchArgument(
+   68:             'rviz',
+   69:             default_value='true',
+   70:             description='Whether to launch RViz with the scene config.'),
+   71:         DeclareLaunchArgument(
+   72:             'turtlebot3_model',
+   73:             default_value='burger',
+   74:             description='TurtleBot3 model suffix. The bundled Velodyne model exists for burger.'),
+   75:         DeclareLaunchArgument(
+   76:             'robot_entity_name',
+   77:             default_value='burger',
+   78:             description='Gazebo entity/model name used in /gazebo/model_states.'),
+   79:         DeclareLaunchArgument(
+   80:             'x_pose',
+   81:             default_value='0.0',
+   82:             description='Initial robot x position in Gazebo.'),
+   83:         DeclareLaunchArgument(
+   84:             'y_pose',
+   85:             default_value='0.0',
+   86:             description='Initial robot y position in Gazebo.'),
+   87:         DeclareLaunchArgument(
+   88:             'lidar_topic',
+   89:             default_value='velodyne_points',
+   90:             description='PointCloud2 topic consumed by local_map.'),
+   91:         DeclareLaunchArgument(
+   92:             'base_frame',
+   93:             default_value='base_link',
+   94:             description='Robot base frame used by local_map and pseudo_odom.'),
+   95:         DeclareLaunchArgument(
+   96:             'sensor_frame',
+   97:             default_value='base_scan',
+   98:             description='3D lidar frame used by local_map.'),
+   99:         DeclareLaunchArgument(
+  100:             'local_map_params_file',
+  101:             default_value=PathJoinSubstitution([
+  102:                 get_package_share_directory('local_map'), 'config', 'config.yaml']),
+  103:             description='Parameter file for local_map.'),
+  104:         DeclareLaunchArgument(
+  105:             'launch_robot',
+  106:             default_value='true',
+  107:             description='Whether to spawn the bundled TurtleBot3 Velodyne robot.'),
+  108:         DeclareLaunchArgument(
+  109:             'launch_local_planner',
+  110:             default_value='false',
+  111:             description='Whether to launch local_planner/controller in addition to baseline mapping.'),
+  112:         DeclareLaunchArgument(
+  113:             'enable_odom_tf',
+  114:             default_value='false',
+  115:             description='Optional world->base_link TF from pseudo odometry; disabled by default to avoid duplicate TF.'),
+  116: 
+  117:         IncludeLaunchDescription(
+  118:             PythonLaunchDescriptionSource(scene_launch_file),
+  119:             launch_arguments={'world': world, 'gui': gui}.items()),
+  120: 
+  121:         Node(
+  122:             package='tf2_ros',
+  123:             executable='static_transform_publisher',
+  124:             name='world_odom_broadcaster',
+  125:             arguments=[
+  126:                 '--x', '0', '--y', '0', '--z', '0',
+  127:                 '--qx', '0', '--qy', '0', '--qz', '0', '--qw', '1',
+  128:                 '--frame-id', 'world', '--child-frame-id', 'odom'
+  129:             ]),
+  130: 
+  131:         Node(
+  132:             package='robot_state_publisher',
+  133:             executable='robot_state_publisher',
+  134:             name='robot_state_publisher',
+  135:             condition=IfCondition(launch_robot),
+  136:             output='screen',
+  137:             parameters=[{
+  138:                 'use_sim_time': use_sim_time,
+  139:                 'robot_description': ParameterValue(Command(['cat ', robot_urdf_path]), value_type=str),
+  140:             }]),
+  141: 
+  142:         Node(
+  143:             package='gazebo_ros',
+  144:             executable='spawn_entity.py',
+  145:             name='spawn_turtlebot3_velodyne',
+  146:             condition=IfCondition(launch_robot),
+  147:             output='screen',
+  148:             arguments=[
+  149:                 '-entity', robot_entity_name,
+  150:                 '-file', robot_sdf_path,
+  151:                 '-x', x_pose,
+  152:                 '-y', y_pose,
+  153:                 '-z', '0.01',
+  154:             ]),
+  155: 
+  156:         Node(
+  157:             package='local_map',
+  158:             executable='local_map',
+  159:             name='local_map',
+  160:             output='screen',
+  161:             parameters=[
+  162:                 local_map_params_file,
+  163:                 {
+  164:                     'use_sim_time': use_sim_time,
+  165:                     'lidar_topic': lidar_topic,
+  166:                     'base_link': base_frame,
+  167:                     'base_scan': sensor_frame,
+  168:                 },
+  169:             ]),
+  170: 
+  171:         IncludeLaunchDescription(
+  172:             PythonLaunchDescriptionSource(movetest_launch_file),
+  173:             launch_arguments={'params_file': PathJoinSubstitution([scene_share, 'config', 'config.yaml'])}.items()),
+  174: 
+  175:         Node(
+  176:             package='obs_param',
+  177:             executable='obs_kf',
+  178:             name='obs_kf',
+  179:             output='screen',
+  180:             parameters=[{'use_sim_time': use_sim_time}]),
+  181: 
+  182:         Node(
+  183:             package='scene',
+  184:             executable='pseudo_odom',
+  185:             name='pseudo_odom',
+  186:             output='screen',
+  187:             parameters=[{
+  188:                 'use_sim_time': use_sim_time,
+  189:                 'robot_entity_name': robot_entity_name,
+  190:                 'model_states_topic': '/gazebo/model_states',
+  191:                 'odom_topic': 'base_pose_ground_truth',
+  192:                 'odom_frame_id': 'world',
+  193:                 'child_frame_id': base_frame,
+  194:             }]),
+  195: 
+  196:         Node(
+  197:             package='scene',
+  198:             executable='odom_tf',
+  199:             name='odom_tf',
+  200:             output='screen',
+  201:             condition=IfCondition(enable_odom_tf),
+  202:             parameters=[{'use_sim_time': use_sim_time}]),
+  203: 
+  204:         Node(
+  205:             package='linear_path_publisher',
+  206:             executable='linear_path_publisher',
+  207:             name='linear_path_publisher',
+  208:             output='screen',
+  209:             parameters=[{'use_sim_time': use_sim_time}]),
+  210: 
+  211:         IncludeLaunchDescription(
+  212:             PythonLaunchDescriptionSource(local_planner_launch_file),
+  213:             condition=IfCondition(launch_local_planner),
+  214:             launch_arguments={
+  215:                 'use_sim_time': use_sim_time,
+  216:                 'params_file': PathJoinSubstitution([local_planner_share, 'config', 'config.yaml']),
+  217:                 'parent_frame': 'world',
+  218:                 'child_frame': base_frame,
+  219:             }.items()),
+  220: 
+  221:         Node(
+  222:             package='rviz2',
+  223:             executable='rviz2',
+  224:             name='rviz',
+  225:             condition=IfCondition(rviz),
+  226:             arguments=['-d', rviz_config_path],
+  227:             output='screen',
+  228:             parameters=[{'use_sim_time': use_sim_time}]),
+  229:     ])
+
+============================================================
+FILE: src\scene\launch\start.launch.py
+============================================================
+    1: from launch import LaunchDescription
+    2: from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+    3: from launch.launch_description_sources import PythonLaunchDescriptionSource
+    4: from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+    5: from ament_index_python.packages import get_package_share_directory
+    6: 
+    7: def generate_launch_description():
+    8:     # Declare launch arguments
+    9:     declare_world_arg = DeclareLaunchArgument(
+   10:         name='world',
+   11:         default_value=PathJoinSubstitution([
+   12:             get_package_share_directory('scene'),
+   13:             'worlds',
+   14:             'world0.world'
+   15:         ]),
+   16:         description='World file to load'
+   17:     )
+   18:     
+   19:     declare_gui_arg = DeclareLaunchArgument(
+   20:         name='gui',
+   21:         default_value='true',
+   22:         description='Whether to run Gazebo GUI'
+   23:     )
+   24:     
+   25:     declare_args_arg = DeclareLaunchArgument(
+   26:         name='args',
+   27:         default_value='',
+   28:         description='Additional arguments for Gazebo'
+   29:     )
+   30: 
+   31:     # Include the standard Gazebo launch file from gazebo_ros package
+   32:     gazebo_launch = IncludeLaunchDescription(
+   33:         PythonLaunchDescriptionSource([
+   34:             PathJoinSubstitution([
+   35:                 get_package_share_directory('gazebo_ros'),
+   36:                 'launch',
+   37:                 'gazebo.launch.py'
+   38:             ])
+   39:         ]),
+   40:         launch_arguments={
+   41:             'world': LaunchConfiguration('world'),
+   42:             'gui': LaunchConfiguration('gui'),
+   43:             'verbose': 'true'  # 鍙€夛紝鍚敤璇︾粏杈撳嚭
+   44:         }.items(),
+   45:     )
+   46: 
+   47:     # Launch description
+   48:     return LaunchDescription([
+   49:         declare_world_arg,
+   50:         declare_gui_arg,
+   51:         declare_args_arg,
+   52:         gazebo_launch,
+   53:     ])
+
+============================================================
+FILE: src\global_path_publisher\config\config.yaml
+============================================================
+    1: /**:
+    2:   ros__parameters:
+    3:     start_x: -10.0
+    4:     start_y: 0.0
+    5:     end_x: 9.0
+    6:     end_y: 9.0
+
+============================================================
+FILE: src\global_path_publisher\src\global_path_publisher.cpp
+============================================================
+    1: #include <rclcpp/rclcpp.hpp>
+    2: #include <nav_msgs/msg/path.hpp>
+    3: #include <geometry_msgs/msg/pose_stamped.hpp>
+    4: #include <eigen3/Eigen/Dense>
+    5: 
+    6: using namespace Eigen;
+    7: 
+    8: class GlobalPathPublisher : public rclcpp::Node
+    9: {
+   10: public:
+   11:     GlobalPathPublisher() : Node("global_path_publisher")
+   12:     {
+   13:         global_path_pub_ = this->create_publisher<nav_msgs::msg::Path>("/global_path", 1);
+   14:         this->declare_parameter<double>("start_x", -10.0);
+   15:         this->declare_parameter<double>("start_y", 0.0);
+   16:         this->declare_parameter<double>("end_x", 9.0);
+   17:         this->declare_parameter<double>("end_y", 0.0);
+   18: 
+   19:         start_pos_ = Vector2d(this->get_parameter("start_x").get_value<double>(), this->get_parameter("start_y").get_value<double>());
+   20:         target_pos_ = Vector2d(this->get_parameter("end_x").get_value<double>(), this->get_parameter("end_y").get_value<double>());
+   21: 
+   22:         dist_ = (target_pos_ - start_pos_).norm();
+   23:         diff_ = (target_pos_ - start_pos_) / dist_;
+   24: 
+   25:         RCLCPP_INFO(this->get_logger(), "start from (%f, %f) to (%f, %f)", start_pos_.x(), start_pos_.y(), target_pos_.x(), target_pos_.y());
+   26:         RCLCPP_INFO(this->get_logger(), "step size = (%f, %f)", diff_.x(), diff_.y());
+   27: 
+   28:         step_ = 0.1;
+   29:         timer_ = this->create_wall_timer(std::chrono::seconds(1), std::bind(&GlobalPathPublisher::timerCallback, this));
+   30:     }
+   31: 
+   32: private:
+   33:     void timerCallback()
+   34:     {
+   35:         nav_msgs::msg::Path global_path;
+   36:         global_path.header.stamp = this->now();
+   37:         global_path.header.frame_id = "world";
+   38: 
+   39:         geometry_msgs::msg::PoseStamped pose_stamped;
+   40:         pose_stamped.header.stamp = this->now();
+   41:         pose_stamped.header.frame_id = "world";
+   42:         pose_stamped.pose.orientation.x = 0;
+   43:         pose_stamped.pose.orientation.y = 0;
+   44:         pose_stamped.pose.orientation.z = 0;
+   45:         pose_stamped.pose.orientation.w = 1;
+   46: 
+   47:         for (double i = 0.0; i < dist_; i += step_)
+   48:         {
+   49:             Vector2d waypoint = start_pos_ + i * diff_;
+   50:             pose_stamped.pose.position.x = waypoint.x();
+   51:             pose_stamped.pose.position.y = waypoint.y();
+   52:             pose_stamped.pose.position.z = 0;
+   53: 
+   54:             global_path.poses.push_back(pose_stamped);
+   55:         }
+   56: 
+   57:         global_path_pub_->publish(global_path);
+   58:     }
+   59: 
+   60:     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr global_path_pub_;
+   61:     Vector2d start_pos_;
+   62:     Vector2d target_pos_;
+   63:     Vector2d diff_;
+   64:     double step_;
+   65:     double dist_;
+   66:     rclcpp::TimerBase::SharedPtr timer_;
+   67: };
+   68: 
+   69: int main(int argc, char **argv)
+   70: {
+   71:     rclcpp::init(argc, argv);
+   72:     auto node = std::make_shared<GlobalPathPublisher>();
+   73:     rclcpp::spin(node);
+   74:     rclcpp::shutdown();
+   75:     return 0;
+   76: }

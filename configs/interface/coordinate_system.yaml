@@ -1,0 +1,31 @@
+schema_version: "1.0"
+
+frame:
+  canonical_frame: ego
+  reference_point: rear_axle_center
+
+  x_axis: forward
+  y_axis: left
+  z_axis: up
+
+  yaw_positive: counter_clockwise
+  yaw_range: [-3.141592653589793, 3.141592653589793]
+
+units:
+  position: meter
+  time: second
+  angle: radian
+  velocity: meter_per_second
+  acceleration: meter_per_second_squared
+  curvature: inverse_meter
+  steering: radian
+
+ego_frame:
+  current_x: 0.0
+  current_y: 0.0
+  current_yaw: 0.0
+
+numerics:
+  float_dtype_storage: float32
+  float_dtype_solver: float64
+  epsilon: 1.0e-6

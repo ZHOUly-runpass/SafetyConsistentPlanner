@@ -1,0 +1,33 @@
+schema_version: "1.0"
+
+evaluation:
+  name: workshop_v1
+
+metrics:
+  collision_rate: true
+  off_road_rate: true
+  progress: true
+  comfort: true
+  minimum_distance: true
+  h_min: true
+  slack_statistics: true
+  infeasible_rate: true
+  correction_statistics: true
+  solver_time_percentiles: [50, 90, 95]
+  planning_latency: true
+  fallback_frequency: true
+
+thresholds:
+  collision_distance: 0.1
+  off_road_margin: 0.3
+  comfort_jerk_max: 5.0
+
+scenarios:
+  filter_by_type: null
+  filter_by_id: null
+  max_scenarios: null
+
+output:
+  format: json
+  save_per_scenario: true
+  save_aggregate: true

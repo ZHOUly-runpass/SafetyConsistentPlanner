@@ -1,0 +1,21 @@
+model:
+  type: kinematic_bicycle
+  reference_point: rear_axle_center
+
+vehicle:
+  wheelbase: 3.0
+  length: 4.8
+  width: 2.0
+
+limits:
+  velocity_min: 0.0
+  velocity_max: 15.0
+
+  acceleration_min: -5.0
+  acceleration_max: 3.0
+
+  steering_min: -0.5
+  steering_max: 0.5
+
+  steering_rate_min: -0.5
+  steering_rate_max: 0.5

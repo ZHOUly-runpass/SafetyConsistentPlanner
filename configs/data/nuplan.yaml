@@ -1,0 +1,35 @@
+schema_version: "1.0"
+
+dataset:
+  name: nuplan
+  version: v1.1
+
+splits:
+  train: trainval
+  val: test
+
+scenarios:
+  max_scenarios: null
+  shuffle: true
+  filter_types:
+    - changing_lane
+    - following_lane
+    - starting_lane_change
+    - traversing_intersection
+
+temporal:
+  history_horizon_sec: 2.0
+  history_dt: 0.5
+  future_horizon_sec: 4.0
+  future_dt: 0.5
+
+agent:
+  max_agents: 64
+
+map:
+  max_polylines: 128
+  max_polyline_length: 20
+
+local:
+  data_root: null
+  maps_root: null
