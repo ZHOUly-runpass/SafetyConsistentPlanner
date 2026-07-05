@@ -29,7 +29,11 @@ class BSplineCandidateHead(nn.Module):
             nn.Linear(hidden_dim, num_candidates * num_control_points * 2),
         )
 
-    def forward(self, scene_embedding: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self,
+        scene_embedding: torch.Tensor,
+        base_trajectory: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         batch = scene_embedding.shape[0]
         control_points = self.control_point_net(scene_embedding)
         control_points = control_points.view(
@@ -37,13 +41,26 @@ class BSplineCandidateHead(nn.Module):
             self.num_control_points,
             2,
         )
-        xy = F.interpolate(
+        residual_xy = F.interpolate(
             control_points.transpose(1, 2),
             size=self.num_future,
             mode="linear",
             align_corners=True,
         ).transpose(1, 2)
-        xy = xy.view(batch, self.num_candidates, self.num_future, 2)
+        residual_xy = residual_xy.view(batch, self.num_candidates, self.num_future, 2)
+        if base_trajectory is None:
+            base_xy = torch.zeros(
+                (batch, 1, self.num_future, 2),
+                dtype=residual_xy.dtype,
+                device=residual_xy.device,
+            )
+        else:
+            if base_trajectory.shape != (batch, self.num_future, 4):
+                raise ValueError(
+                    f"base_trajectory must have shape [{batch}, {self.num_future}, 4]."
+                )
+            base_xy = base_trajectory[:, None, :, :2]
+        xy = base_xy + residual_xy
 
         deltas = torch.zeros_like(xy)
         deltas[:, :, 1:, :] = xy[:, :, 1:, :] - xy[:, :, :-1, :]

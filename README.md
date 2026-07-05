@@ -26,9 +26,13 @@ repository and are not downloaded by setup scripts.
 
 ## Current Boundary
 
-The JSON fixture adapter, NumPy reference tracker, model forward paths,
-candidate execution, fallback behavior, and training dry-runs are covered by
-unit tests. `CasadiVehicleDcbfMpcSolver.solve()` still delegates to the NumPy
-reference tracker; a constrained nonlinear D-CBF-MPC implementation and real
-nuPlan closed-loop integration remain future work.
+The repository now includes a real CasADi/IPOPT D-CBF-MPC backend, typed road
+corridors, fixed tensorized scene shards, a mask-aware vector model, executable
+IL/safety/ranker training paths, pseudo-label generation, the persistent
+MessagePack planner worker, and evaluation report generation.
 
+The standalone Python 3.9 nuPlan adapter is implemented under `integration/`,
+but real trainval extraction and the 20-scenario official closed-loop run still
+require licensed nuPlan data and maps at the configured server paths. Full
+preprocessing and multi-worker training remain blocked until the development
+machine's CPU/RAM stability issue is resolved.

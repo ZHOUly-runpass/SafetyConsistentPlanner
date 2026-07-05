@@ -1,0 +1,20 @@
+dry_run: false
+data:
+  train_manifest: /data/nuplan/processed/safety_planner/v1/train-manifest.jsonl
+  val_manifest: /data/nuplan/processed/safety_planner/v1/val-manifest.jsonl
+output_dir: /home/zhou/SafetyConsistentPlanner/outputs/checkpoints/il_small
+model:
+  d_scene: 256
+  d_entity: 64
+  hidden_dim: 256
+  num_candidates: 4
+  num_future: 8
+training:
+  epochs: 5
+  batch_size: 32
+  learning_rate: 0.0001
+  weight_decay: 0.00001
+  gradient_clip_norm: 1.0
+  seed: 42
+  num_workers: 0
+  device: cuda

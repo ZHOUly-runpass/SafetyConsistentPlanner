@@ -5,6 +5,7 @@ __all__ = [
     "SafetyPredictionHeads",
     "LightweightRanker",
     "GBDTRanker",
+    "SafetyConsistentPlannerModel",
 ]
 
 
@@ -29,4 +30,8 @@ def __getattr__(name: str):
         from .lightweight_ranker import GBDTRanker
 
         return GBDTRanker
+    if name == "SafetyConsistentPlannerModel":
+        from .planner_model import SafetyConsistentPlannerModel
+
+        return SafetyConsistentPlannerModel
     raise AttributeError(name)

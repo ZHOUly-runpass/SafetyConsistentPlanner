@@ -3,6 +3,7 @@ schema_version: "1.0"
 solver:
   backend: casadi
   nlp_solver: ipopt
+  allow_numpy_fallback: false
 
 ipopt:
   tol: 1.0e-4
@@ -20,3 +21,13 @@ casadi:
 
 timeouts:
   solve_ms: 200
+
+weights:
+  position: 10.0
+  yaw: 2.0
+  velocity: 1.0
+  acceleration: 0.1
+  steering: 0.1
+  smoothness: 1.0
+  obstacle_slack: 1000.0
+  road_slack: 1000.0

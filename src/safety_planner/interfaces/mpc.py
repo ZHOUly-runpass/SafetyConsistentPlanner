@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
-
 import numpy as np
 from numpy.typing import NDArray
 
 from .obstacle import PredictedObstacle
+from .road import RoadCorridor
 
 FloatArray = NDArray[np.float64]
 
@@ -24,7 +23,7 @@ class MpcRequest:
 
     predicted_obstacles: list[PredictedObstacle]
 
-    road_boundaries: Any | None = None
+    road_corridor: RoadCorridor | None = None
 
     initial_guess_states: FloatArray | None = None
     initial_guess_controls: FloatArray | None = None
@@ -63,6 +62,8 @@ class MpcRequest:
 
         for obstacle in self.predicted_obstacles:
             obstacle.validate(num_intervals=num_intervals)
+        if self.road_corridor is not None:
+            self.road_corridor.validate(num_intervals=num_intervals)
 
 
 @dataclass
@@ -123,6 +124,9 @@ class MpcResult:
         if self.obstacle_slack is not None:
             if self.obstacle_slack.shape != (num_obstacles, nm):
                 raise ValueError(f"obstacle_slack must have shape [{num_obstacles}, {nm}].")
+
+        if self.road_slack is not None and self.road_slack.shape != (2, nm + 1):
+            raise ValueError(f"road_slack must have shape [2, {nm + 1}].")
 
         if self.first_control is not None:
             if self.first_control.shape != (2,):

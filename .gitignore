@@ -21,3 +21,6 @@ configs/paths/server.yaml
 *.onnx
 *.npz
 *.npy
+
+# Local transfer artifact
+implementation_bundle.tar.gz

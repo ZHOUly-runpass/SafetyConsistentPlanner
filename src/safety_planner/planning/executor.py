@@ -55,21 +55,102 @@ def execute_top_candidate(
         result = solver.solve(request)
         fallback_mode = FallbackMode.NONE if order == 0 else FallbackMode.NEXT_CANDIDATE
         if result.feasible:
-            output = ExecutionOutput(
-                selected_candidate_id=int(candidate_id),
-                safe_trajectory=result.safe_states,
-                first_control=result.first_control,
-                feasible=True,
-                fallback_mode=fallback_mode,
-                h_min=result.h_min,
-                slack_max=result.slack_max,
-                solve_time_ms=result.solve_time_ms,
-                diagnostics=result.metadata,
-            )
-            output.validate()
-            return output
+            return _result_to_output(result, int(candidate_id), fallback_mode)
+
+    best_id = int(sorted_ids[0])
+    reduced_candidate = planner_output.candidate_trajectories[batch_index, best_id].copy()
+    reduced_candidate[:, 3] *= 0.5
+    reduced_request = _request_from_candidate(
+        reduced_candidate,
+        planner_timestamps,
+        initial_state,
+        predicted_obstacles,
+        mpc_num_intervals,
+        mpc_dt,
+        scenario_id,
+        best_id,
+        "reduced_speed",
+    )
+    reduced_result = solver.solve(reduced_request)
+    if reduced_result.feasible:
+        return _result_to_output(reduced_result, best_id, FallbackMode.REDUCED_SPEED)
+
+    conservative_timestamps = np.arange(mpc_num_intervals + 1, dtype=np.float64) * mpc_dt
+    conservative_states = np.zeros((mpc_num_intervals + 1, 4), dtype=np.float64)
+    conservative_states[0] = initial_state
+    for k in range(mpc_num_intervals):
+        speed = max(0.0, conservative_states[k, 3] - 2.0 * mpc_dt)
+        conservative_states[k + 1] = conservative_states[k]
+        conservative_states[k + 1, 0] += mpc_dt * speed * np.cos(initial_state[2])
+        conservative_states[k + 1, 1] += mpc_dt * speed * np.sin(initial_state[2])
+        conservative_states[k + 1, 3] = speed
+    conservative_request = MpcRequest(
+        schema_version="1.0",
+        scenario_id=scenario_id,
+        candidate_id=best_id,
+        initial_state=initial_state,
+        reference_states=conservative_states,
+        reference_timestamps=conservative_timestamps,
+        predicted_obstacles=predicted_obstacles,
+        prediction_source="conservative_reference",
+    )
+    conservative_result = solver.solve(conservative_request)
+    if conservative_result.feasible:
+        return _result_to_output(
+            conservative_result,
+            best_id,
+            FallbackMode.CONSERVATIVE_REFERENCE,
+        )
 
     return _emergency_stop(initial_state, reason="solver_infeasible")
+
+
+def _request_from_candidate(
+    candidate,
+    planner_timestamps,
+    initial_state,
+    predicted_obstacles,
+    mpc_num_intervals,
+    mpc_dt,
+    scenario_id,
+    candidate_id,
+    prediction_source,
+) -> MpcRequest:
+    valid_mask = np.ones(candidate.shape[0], dtype=np.bool_)
+    mpc_timestamps, reference_states, _ = resample_trajectory_to_mpc_grid(
+        planner_timestamps,
+        candidate,
+        valid_mask,
+        mpc_num_intervals,
+        mpc_dt,
+        current_time=float(planner_timestamps[0]),
+    )
+    return MpcRequest(
+        schema_version="1.0",
+        scenario_id=scenario_id,
+        candidate_id=int(candidate_id),
+        initial_state=initial_state,
+        reference_states=reference_states,
+        reference_timestamps=mpc_timestamps,
+        predicted_obstacles=predicted_obstacles,
+        prediction_source=prediction_source,
+    )
+
+
+def _result_to_output(result, candidate_id: int, fallback_mode: FallbackMode) -> ExecutionOutput:
+    output = ExecutionOutput(
+        selected_candidate_id=candidate_id,
+        safe_trajectory=result.safe_states,
+        first_control=result.first_control,
+        feasible=True,
+        fallback_mode=fallback_mode,
+        h_min=result.h_min,
+        slack_max=result.slack_max,
+        solve_time_ms=result.solve_time_ms,
+        diagnostics=result.metadata,
+    )
+    output.validate()
+    return output
 
 
 def _emergency_stop(initial_state: NDArray[np.float64], reason: str) -> ExecutionOutput:

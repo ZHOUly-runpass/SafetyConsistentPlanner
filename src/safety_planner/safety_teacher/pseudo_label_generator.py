@@ -1,6 +1,13 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from ..interfaces import MpcRequest, MpcResult, PseudoLabelRecord
+from ..dcbf_mpc import DcbfMpcSolver
+import numpy as np
+from ..dcbf_mpc import resample_trajectory_to_mpc_grid
+from ..interfaces import PredictedObstacle
 
 
 def grade_mpc_result(
@@ -52,3 +59,158 @@ def build_pseudo_label_record(
     )
     record.validate()
     return record
+
+
+def generate_pseudo_labels(
+    requests: list[MpcRequest],
+    solver: DcbfMpcSolver,
+    output_dir: str | Path,
+    code_commit: str = "",
+) -> list[PseudoLabelRecord]:
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    records: list[PseudoLabelRecord] = []
+    manifest_rows: list[dict] = []
+    for index, request in enumerate(requests):
+        try:
+            result = solver.solve(request)
+            record = build_pseudo_label_record(request, result, code_commit=code_commit)
+        except Exception as exc:
+            record = PseudoLabelRecord(
+                scenario_id=request.scenario_id,
+                candidate_id=request.candidate_id,
+                feasible=False,
+                solver_status=-1,
+                quality_grade="D",
+                failure_reason=f"{type(exc).__name__}:{exc}",
+                solver_config_hash=request.solver_config_hash,
+                code_commit=code_commit,
+                prediction_source=request.prediction_source,
+            )
+        filename = f"record-{index:08d}.json"
+        record.save_json(root / filename)
+        records.append(record)
+        manifest_rows.append(
+            {
+                "schema_version": record.schema_version,
+                "scenario_id": record.scenario_id,
+                "candidate_id": record.candidate_id,
+                "quality_grade": record.quality_grade,
+                "feasible": record.feasible,
+                "solver_status": record.solver_status,
+                "failure_reason": record.failure_reason,
+                "path": filename,
+                "solver_config_hash": record.solver_config_hash,
+                "code_commit": record.code_commit,
+            }
+        )
+    (root / "manifest.jsonl").write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in manifest_rows),
+        encoding="utf-8",
+    )
+    return records
+
+
+def build_candidate_requests(
+    scenario_id: str,
+    candidate_trajectories: np.ndarray,
+    planner_timestamps: np.ndarray,
+    initial_state: np.ndarray,
+    predicted_obstacles: list[PredictedObstacle],
+    mpc_num_intervals: int = 15,
+    mpc_dt: float = 0.2,
+    prediction_source: str = "unknown",
+    solver_config_hash: str = "",
+) -> list[MpcRequest]:
+    if candidate_trajectories.ndim != 3 or candidate_trajectories.shape[2] != 4:
+        raise ValueError("candidate_trajectories must have shape [G, T, 4].")
+    requests = []
+    for candidate_id, candidate in enumerate(candidate_trajectories):
+        mpc_timestamps, reference, valid = resample_trajectory_to_mpc_grid(
+            planner_timestamps,
+            candidate,
+            np.ones(candidate.shape[0], dtype=np.bool_),
+            mpc_num_intervals,
+            mpc_dt,
+            current_time=float(planner_timestamps[0]),
+        )
+        if not np.all(valid):
+            raise ValueError("Candidate does not cover the complete MPC horizon.")
+        requests.append(
+            MpcRequest(
+                schema_version="1.0",
+                scenario_id=scenario_id,
+                candidate_id=candidate_id,
+                initial_state=np.asarray(initial_state, dtype=np.float64),
+                reference_states=reference,
+                reference_timestamps=mpc_timestamps,
+                predicted_obstacles=predicted_obstacles,
+                prediction_source=prediction_source,
+                solver_config_hash=solver_config_hash,
+            )
+        )
+    return requests
+
+
+def records_to_safety_targets(
+    records: list[PseudoLabelRecord],
+    scenario_ids: list[str],
+    num_candidates: int,
+) -> dict[str, np.ndarray]:
+    grouped = {(record.scenario_id, record.candidate_id): record for record in records}
+    shape = (len(scenario_ids), num_candidates)
+    h_min = np.full(shape, -1e3, dtype=np.float32)
+    feasible = np.zeros(shape, dtype=np.float32)
+    correction = np.zeros(shape, dtype=np.float32)
+    risk = np.full(shape, 1e3, dtype=np.float32)
+    for scene_index, scenario_id in enumerate(scenario_ids):
+        for candidate_id in range(num_candidates):
+            record = grouped.get((scenario_id, candidate_id))
+            if record is None:
+                continue
+            if record.h_values is not None and record.h_values.size:
+                finite = record.h_values[np.isfinite(record.h_values)]
+                h_min[scene_index, candidate_id] = float(np.min(finite)) if finite.size else 1e3
+            feasible[scene_index, candidate_id] = float(record.feasible)
+            correction[scene_index, candidate_id] = float(record.correction_l2)
+            slack_max = float(np.max(record.slack)) if record.slack is not None and record.slack.size else 0.0
+            risk[scene_index, candidate_id] = max(0.0, -h_min[scene_index, candidate_id]) + slack_max
+    return {
+        "target_h_min": h_min,
+        "target_feasible": feasible,
+        "target_correction": correction,
+        "target_risk": risk,
+    }
+
+
+def write_ranker_features(records: list[PseudoLabelRecord], output_path: str | Path) -> dict:
+    rows = []
+    labels = []
+    for record in records:
+        finite_h = (
+            record.h_values[np.isfinite(record.h_values)]
+            if record.h_values is not None
+            else np.asarray([], dtype=np.float64)
+        )
+        h_min = float(np.min(finite_h)) if finite_h.size else -1e3
+        slack_max = (
+            float(np.max(record.slack))
+            if record.slack is not None and record.slack.size
+            else 0.0
+        )
+        rows.append(
+            [
+                record.objective_total,
+                h_min,
+                float(record.feasible),
+                record.correction_l2,
+                slack_max,
+            ]
+        )
+        labels.append(-record.objective_total - (0.0 if record.feasible else 1e6))
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    features = np.asarray(rows, dtype=np.float64)
+    target = np.asarray(labels, dtype=np.float64)
+    np.savez(output, features=features, labels=target)
+    return {"num_rows": len(records), "num_features": features.shape[1] if features.size else 5}

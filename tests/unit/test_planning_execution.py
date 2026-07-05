@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from src.safety_planner.dcbf_mpc import NumpyVehicleDcbfMpcSolver
-from src.safety_planner.interfaces import FallbackMode, PlannerOutput
+from src.safety_planner.interfaces import FallbackMode, MpcResult, PlannerOutput
 from src.safety_planner.planning import execute_top_candidate, hard_filter_candidates
 
 
@@ -48,3 +48,36 @@ def test_execute_top_candidate_returns_execution_output() -> None:
     assert out.feasible
     assert out.fallback_mode == FallbackMode.NONE
     assert out.first_control.shape == (2,)
+
+
+def test_execute_top_candidate_uses_reduced_speed_fallback() -> None:
+    class SequenceSolver:
+        def __init__(self):
+            self.calls = 0
+
+        def solve(self, request):
+            self.calls += 1
+            feasible = self.calls == 2
+            return MpcResult(
+                safe_states=request.reference_states.copy(),
+                controls=np.zeros((request.reference_states.shape[0] - 1, 2)),
+                feasible=feasible,
+                first_control=np.zeros(2),
+                metadata={"source": request.prediction_source},
+            )
+
+    candidate = np.zeros((8, 4), dtype=np.float64)
+    candidate[:, 0] = np.linspace(0.0, 4.0, 8)
+    candidate[:, 3] = 2.0
+    solver = SequenceSolver()
+    output = execute_top_candidate(
+        PlannerOutput(candidate_trajectories=candidate.reshape(1, 1, 8, 4)),
+        np.linspace(0.0, 3.5, 8),
+        np.array([0.0, 0.0, 0.0, 2.0]),
+        [],
+        solver,
+        15,
+        0.2,
+    )
+    assert output.fallback_mode == FallbackMode.REDUCED_SPEED
+    assert output.diagnostics["source"] == "reduced_speed"

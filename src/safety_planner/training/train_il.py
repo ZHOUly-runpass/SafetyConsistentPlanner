@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..utils import load_config
+from .engine import TrainingConfig, train_il_model
 
 
 def train_il_baseline(config_path: str, dry_run: bool = True) -> dict[str, Any]:
@@ -20,12 +21,19 @@ def train_il_baseline(config_path: str, dry_run: bool = True) -> dict[str, Any]:
         return manifest
 
     _require_training_dependency("torch", "PyTorch")
-    _require_training_dependency("nuplan", "nuPlan devkit")
-    raise RuntimeError(
-        "Real IL training requires configured nuPlan database paths, dataloader "
-        "splits, checkpoint output paths, and a Linux training environment. "
-        "Set dry_run=true for local validation."
+    data = config.get("data", {})
+    output_dir = config.get("output_dir")
+    if not data.get("train_manifest") or not data.get("val_manifest") or not output_dir:
+        raise ValueError("Real IL training requires train_manifest, val_manifest, and output_dir.")
+    train_cfg = TrainingConfig(**config.get("training", {}))
+    metrics = train_il_model(
+        data["train_manifest"],
+        data["val_manifest"],
+        output_dir,
+        model_config=config.get("model", {}),
+        training_config=train_cfg,
     )
+    return {**manifest, "status": "completed", "metrics": metrics}
 
 
 def _require_training_dependency(module_name: str, package_name: str) -> None:

@@ -1,0 +1,13 @@
+name: nuplan_py39
+channels:
+  - conda-forge
+dependencies:
+  - python=3.9
+  - pip=21.2.4
+  - numpy=1.23.4
+  - pip:
+      - msgpack==1.1.1
+      - -r https://raw.githubusercontent.com/motional/nuplan-devkit/v1.2.2/requirements_torch.txt
+      - -r https://raw.githubusercontent.com/motional/nuplan-devkit/v1.2.2/requirements.txt
+      - git+https://github.com/motional/nuplan-devkit.git@v1.2.2
+

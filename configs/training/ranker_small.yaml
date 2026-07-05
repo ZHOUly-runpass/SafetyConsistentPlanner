@@ -1,0 +1,8 @@
+dry_run: false
+feature_npz: /data/nuplan/processed/safety_planner/v1/ranker/features.npz
+output_path: /home/zhou/SafetyConsistentPlanner/outputs/checkpoints/ranker/gbdt.joblib
+ranker:
+  backend: sklearn
+  random_state: 42
+  n_estimators: 100
+  max_depth: 3

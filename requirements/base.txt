@@ -3,4 +3,4 @@ pytest==9.1.1
 PyYAML==6.0.3
 scikit-learn==1.7.2
 scipy==1.15.2
-
+msgpack==1.1.1
