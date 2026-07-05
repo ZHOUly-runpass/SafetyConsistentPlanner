@@ -1,4 +1,5 @@
 from .nuplan_adapter import NuPlanAdapter
+from .nuplan_extraction import NuPlanExtractionConfig, extract_scene_sample
 from .shards import (
     NpzShardDataset,
     deterministic_subsets,
