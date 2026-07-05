@@ -338,8 +338,12 @@ class CasadiVehicleDcbfMpcSolver(DcbfMpcSolver):
             opti.set_initial(road_slack, 0.01)
 
         timeout_seconds = max(float(timeouts.get("solve_ms", 200.0)) / 1000.0, 0.001)
-        plugin_options = {"expand": bool(self._section("casadi").get("expand", True))}
+        plugin_options = {
+            "expand": bool(self._section("casadi").get("expand", True)),
+            "print_time": False,
+        }
         solver_options = {
+            "sb": "yes",
             "print_level": int(ipopt.get("print_level", 0)),
             "max_iter": int(ipopt.get("max_iter", 500)),
             "tol": float(ipopt.get("tol", 1e-4)),

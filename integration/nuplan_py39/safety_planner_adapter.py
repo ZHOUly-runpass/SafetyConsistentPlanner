@@ -44,9 +44,20 @@ class SafetyConsistentPlannerAdapter(AbstractPlanner):
             raise RuntimeError("Planner worker is not running.")
         request_id = str(uuid.uuid4())
         scene = tensorize_planner_input(current_input, self._initialization)
+        current = list(current_input.history.ego_states)[-1]
+        speed = current.dynamic_car_state.rear_axle_velocity_2d.magnitude()
         _write_message(
             self._worker.stdin,
-            {"schema_version": "1.0", "request_id": request_id, "scene": scene},
+            {
+                "schema_version": "1.0",
+                "request_id": request_id,
+                "scenario_id": request_id,
+                "timestamp_us": current.time_point.time_us,
+                "scene": scene,
+                "initial_state": np.asarray([0.0, 0.0, 0.0, speed], dtype=np.float64),
+                "planner_timestamps": np.arange(1, 9, dtype=np.float64) * 0.5,
+                "predicted_obstacles": _constant_velocity_predictions(current_input, current),
+            },
         )
         response = _read_message(self._worker.stdout)
         if response.get("request_id") != request_id:
@@ -54,9 +65,11 @@ class SafetyConsistentPlannerAdapter(AbstractPlanner):
         if not response.get("ok"):
             raise RuntimeError(response.get("error", "Planner worker failed."))
         relative = np.asarray(response["selected_trajectory"], dtype=np.float64)
+        if relative.ndim != 2 or relative.shape[1] != 4 or len(relative) == 0:
+            raise RuntimeError("Planner worker returned an invalid selected trajectory.")
         ego_states = current_input.history.ego_states
         states = transform_predictions_to_states(
-            relative[:, :3], ego_states, future_horizon=4.0, step_interval=0.5
+            relative[:, :3], ego_states, future_horizon=4.0, step_interval=4.0 / len(relative)
         )
         return InterpolatedTrajectory(states)
 
@@ -159,6 +172,38 @@ def tensorize_planner_input(current_input, initialization):
     }
 
 
+def _constant_velocity_predictions(current_input, current):
+    timestamps = np.arange(16, dtype=np.float64) * 0.2
+    observation = current_input.history.current_state[1]
+    objects = list(observation.tracked_objects.tracked_objects)
+    objects.sort(key=lambda obj: obj.center.distance_to(current.rear_axle))
+    predictions = []
+    for obj in objects[:32]:
+        x, y = _to_ego(
+            obj.center.x,
+            obj.center.y,
+            current.rear_axle.x,
+            current.rear_axle.y,
+            current.rear_axle.heading,
+        )
+        vx, vy = _rotate(obj.velocity.x, obj.velocity.y, -current.rear_axle.heading)
+        centers = np.column_stack((x + timestamps * vx, y + timestamps * vy))
+        predictions.append(
+            {
+                "track_id": str(obj.track_token),
+                "obstacle_type": int(obj.tracked_object_type.value),
+                "timestamps": timestamps,
+                "centers": centers,
+                "yaws": np.full(16, _wrap(obj.center.heading - current.rear_axle.heading)),
+                "lengths": np.full(16, obj.box.length),
+                "widths": np.full(16, obj.box.width),
+                "velocities": np.tile(np.asarray([vx, vy]), (16, 1)),
+                "valid_mask": np.ones(16, dtype=np.bool_),
+            }
+        )
+    return predictions
+
+
 def _to_ego(x, y, origin_x, origin_y, origin_yaw):
     return _rotate(x - origin_x, y - origin_y, -origin_yaw)
 
@@ -216,4 +261,3 @@ def _decode(value):
     if isinstance(value, list):
         return [_decode(item) for item in value]
     return value
-
