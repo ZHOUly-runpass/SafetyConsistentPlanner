@@ -11,6 +11,9 @@ data/*
 outputs/*
 !outputs/.gitkeep
 
+# Machine-specific path configuration
+configs/paths/server.yaml
+
 *.log
 *.ckpt
 *.pt
