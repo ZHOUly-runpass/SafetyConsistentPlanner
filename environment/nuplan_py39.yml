@@ -7,7 +7,6 @@ dependencies:
   - numpy=1.23.4
   - pip:
       - msgpack==1.1.1
-      - -r https://raw.githubusercontent.com/motional/nuplan-devkit/v1.2.2/requirements_torch.txt
-      - -r https://raw.githubusercontent.com/motional/nuplan-devkit/v1.2.2/requirements.txt
-      - git+https://github.com/motional/nuplan-devkit.git@v1.2.2
-
+      - -r https://raw.githubusercontent.com/motional/nuplan-devkit/e9241677997dd86bfc0bcd44817ab04fe631405b/requirements_torch.txt
+      - -r https://raw.githubusercontent.com/motional/nuplan-devkit/e9241677997dd86bfc0bcd44817ab04fe631405b/requirements.txt
+      - git+https://github.com/motional/nuplan-devkit.git@e9241677997dd86bfc0bcd44817ab04fe631405b
