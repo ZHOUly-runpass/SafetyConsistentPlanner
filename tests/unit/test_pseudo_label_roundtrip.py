@@ -93,6 +93,12 @@ def test_pseudo_label_generation_preserves_solver_exceptions(tmp_path) -> None:
     assert records[0].solver_status == -1
     assert "synthetic failure" in records[0].failure_reason
     assert (tmp_path / "manifest.jsonl").exists()
+    assert (tmp_path / "manifest.parquet").exists()
+    with np.load(tmp_path / "pseudo-labels-00000.npz") as shard:
+        assert shard["scenario_id"].tolist() == ["failed-scene"]
+        assert shard["quality_grade"].tolist() == ["D"]
+        assert "synthetic failure" in shard["failure_reason"][0]
+        assert shard["controls"].shape == (1, 0)
 
 
 def test_pseudo_labels_feed_safety_and_ranker_training(tmp_path) -> None:

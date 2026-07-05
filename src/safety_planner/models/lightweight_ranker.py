@@ -50,3 +50,35 @@ class GBDTRanker:
             raise RuntimeError("Ranker must be fitted before predict().")
         x_aug = np.concatenate([x, np.ones((x.shape[0], 1), dtype=np.float64)], axis=1)
         return x_aug @ self._linear_weights
+
+
+class SmallMLPRanker:
+    def __init__(self, config: dict | None = None) -> None:
+        self._config = config or {}
+        self._model: Any | None = None
+
+    def fit(self, features: NDArray[Any], labels: NDArray[Any]) -> None:
+        from sklearn.neural_network import MLPRegressor
+
+        x = np.asarray(features, dtype=np.float64)
+        y = np.asarray(labels, dtype=np.float64)
+        if x.ndim != 2 or y.shape != (x.shape[0],):
+            raise ValueError("Expected features [N, D] and labels [N].")
+        self._model = MLPRegressor(
+            hidden_layer_sizes=tuple(self._config.get("hidden_layer_sizes", (32, 16))),
+            activation="relu",
+            solver="adam",
+            random_state=int(self._config.get("random_state", 0)),
+            learning_rate_init=float(self._config.get("learning_rate", 1e-3)),
+            max_iter=int(self._config.get("max_iter", 300)),
+            early_stopping=x.shape[0] >= 20,
+        )
+        self._model.fit(x, y)
+
+    def predict(self, features: NDArray[Any]) -> NDArray[np.float64]:
+        if self._model is None:
+            raise RuntimeError("Ranker must be fitted before predict().")
+        x = np.asarray(features, dtype=np.float64)
+        if x.ndim != 2:
+            raise ValueError("features must have shape [N, D].")
+        return np.asarray(self._model.predict(x), dtype=np.float64)

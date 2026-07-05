@@ -108,7 +108,103 @@ def generate_pseudo_labels(
         "".join(json.dumps(row, sort_keys=True) + "\n" for row in manifest_rows),
         encoding="utf-8",
     )
+    write_pseudo_label_shards(records, root, manifest_rows=manifest_rows)
     return records
+
+
+def write_pseudo_label_shards(
+    records: list[PseudoLabelRecord],
+    output_dir: str | Path,
+    shard_size: int = 512,
+    manifest_rows: list[dict] | None = None,
+) -> list[dict]:
+    if shard_size <= 0:
+        raise ValueError("shard_size must be positive.")
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    rows = [dict(row) for row in manifest_rows] if manifest_rows is not None else []
+    if rows and len(rows) != len(records):
+        raise ValueError("manifest_rows must match records.")
+    if not rows:
+        rows = [_record_manifest_row(record) for record in records]
+    array_fields = (
+        "ref_planner_states",
+        "safe_planner_states",
+        "ref_mpc_states",
+        "safe_mpc_states",
+        "controls",
+        "h_values",
+        "cbf_residuals",
+        "slack",
+    )
+    for shard_index, offset in enumerate(range(0, len(records), shard_size)):
+        chunk = records[offset : offset + shard_size]
+        shard_name = f"pseudo-labels-{shard_index:05d}.npz"
+        arrays: dict[str, np.ndarray] = {
+            "scenario_id": np.asarray([record.scenario_id for record in chunk]),
+            "candidate_id": np.asarray([record.candidate_id for record in chunk], dtype=np.int32),
+            "feasible": np.asarray([record.feasible for record in chunk], dtype=np.bool_),
+            "solver_status": np.asarray([record.solver_status for record in chunk], dtype=np.int32),
+            "quality_grade": np.asarray([record.quality_grade for record in chunk]),
+            "failure_reason": np.asarray([record.failure_reason for record in chunk]),
+            "objective_total": np.asarray([record.objective_total for record in chunk]),
+            "objective_tracking": np.asarray([record.objective_tracking for record in chunk]),
+            "objective_control": np.asarray([record.objective_control for record in chunk]),
+            "objective_smoothness": np.asarray([record.objective_smoothness for record in chunk]),
+            "objective_slack": np.asarray([record.objective_slack for record in chunk]),
+            "correction_l2": np.asarray([record.correction_l2 for record in chunk]),
+            "correction_max": np.asarray([record.correction_max for record in chunk]),
+            "solve_time_ms": np.asarray([record.solve_time_ms for record in chunk]),
+        }
+        for field in array_fields:
+            values, mask = _pad_record_arrays([getattr(record, field) for record in chunk])
+            arrays[field] = values
+            arrays[field + "_mask"] = mask
+        np.savez_compressed(root / shard_name, **arrays)
+        for index, row in enumerate(rows[offset : offset + len(chunk)]):
+            row["shard"] = shard_name
+            row["index"] = index
+    (root / "manifest.jsonl").write_text(
+        "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows), encoding="utf-8"
+    )
+    try:
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+    except ImportError as exc:
+        raise RuntimeError("pyarrow is required for pseudo-label manifests.") from exc
+    pq.write_table(pa.Table.from_pylist(rows), root / "manifest.parquet")
+    return rows
+
+
+def _record_manifest_row(record: PseudoLabelRecord) -> dict:
+    return {
+        "schema_version": record.schema_version,
+        "scenario_id": record.scenario_id,
+        "candidate_id": record.candidate_id,
+        "quality_grade": record.quality_grade,
+        "feasible": record.feasible,
+        "solver_status": record.solver_status,
+        "failure_reason": record.failure_reason,
+        "solver_config_hash": record.solver_config_hash,
+        "code_commit": record.code_commit,
+        "prediction_source": record.prediction_source,
+    }
+
+
+def _pad_record_arrays(values: list[np.ndarray | None]) -> tuple[np.ndarray, np.ndarray]:
+    present = [np.asarray(value, dtype=np.float64) for value in values if value is not None]
+    rank = max((value.ndim for value in present), default=1)
+    shape = tuple(max((value.shape[axis] if axis < value.ndim else 1 for value in present), default=0) for axis in range(rank))
+    output = np.zeros((len(values),) + shape, dtype=np.float64)
+    mask = np.zeros((len(values),) + shape, dtype=np.bool_)
+    for row, value in enumerate(values):
+        if value is None:
+            continue
+        array = np.asarray(value, dtype=np.float64)
+        slices = (row,) + tuple(slice(0, size) for size in array.shape)
+        output[slices] = array
+        mask[slices] = True
+    return output, mask
 
 
 def build_candidate_requests(

@@ -60,3 +60,35 @@ def test_il_training_writes_recoverable_checkpoint(tmp_path) -> None:
     checkpoint = torch.load(tmp_path / "output" / "best.pt", map_location="cpu")
     assert checkpoint["schema_version"] == "1.0"
     assert checkpoint["history"][0]["val_loss"] >= 0.0
+
+
+def test_ranker_training_writes_gbdt_and_small_mlp(tmp_path) -> None:
+    pytest.importorskip("sklearn")
+    rng = np.random.default_rng(4)
+    features = rng.normal(size=(24, 5))
+    features[:, 2] = 1.0
+    labels = -features[:, 0] + 0.25 * features[:, 1]
+    feature_path = tmp_path / "ranker.npz"
+    output_path = tmp_path / "ranker.joblib"
+    np.savez(feature_path, features=features, labels=labels)
+    config_path = tmp_path / "ranker.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "dry_run": False,
+                "feature_npz": str(feature_path),
+                "output_path": str(output_path),
+                "ranker": {"backend": "sklearn", "random_state": 4, "n_estimators": 10},
+                "small_mlp": {"random_state": 4, "max_iter": 500},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = train_ranker(str(config_path), dry_run=False)
+
+    assert result["status"] == "completed"
+    assert output_path.exists()
+    assert (tmp_path / "ranker-small-mlp.joblib").exists()
+    assert result["metrics"]["num_rows"] == 24
+    assert np.isfinite(result["metrics"]["small_mlp_mse"])

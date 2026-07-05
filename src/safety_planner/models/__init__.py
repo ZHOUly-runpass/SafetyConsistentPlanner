@@ -5,6 +5,7 @@ __all__ = [
     "SafetyPredictionHeads",
     "LightweightRanker",
     "GBDTRanker",
+    "SmallMLPRanker",
     "SafetyConsistentPlannerModel",
 ]
 
@@ -26,10 +27,10 @@ def __getattr__(name: str):
         from .safety_heads import LightweightRanker, SafetyPredictionHeads
 
         return {"SafetyPredictionHeads": SafetyPredictionHeads, "LightweightRanker": LightweightRanker}[name]
-    if name == "GBDTRanker":
-        from .lightweight_ranker import GBDTRanker
+    if name in {"GBDTRanker", "SmallMLPRanker"}:
+        from .lightweight_ranker import GBDTRanker, SmallMLPRanker
 
-        return GBDTRanker
+        return {"GBDTRanker": GBDTRanker, "SmallMLPRanker": SmallMLPRanker}[name]
     if name == "SafetyConsistentPlannerModel":
         from .planner_model import SafetyConsistentPlannerModel
 

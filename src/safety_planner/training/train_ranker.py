@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..utils import load_config
-from ..models.lightweight_ranker import GBDTRanker
+from ..models.lightweight_ranker import GBDTRanker, SmallMLPRanker
 
 
 def train_ranker(config_path: str, dry_run: bool = True) -> dict[str, Any]:
@@ -40,13 +40,27 @@ def train_ranker(config_path: str, dry_run: bool = True) -> dict[str, Any]:
     with np.load(feature_path) as data:
         features = data["features"]
         labels = data["labels"]
-    ranker = GBDTRanker(config.get("ranker", {}))
-    ranker.fit(features, labels)
-    predictions = ranker.predict(features)
-    mse = float(np.mean((predictions - labels) ** 2))
+    ranker_config = config.get("ranker", {})
+    gbdt = GBDTRanker(ranker_config)
+    gbdt.fit(features, labels)
+    mlp = SmallMLPRanker(config.get("small_mlp", ranker_config))
+    mlp.fit(features, labels)
+    analytical = -features[:, 0] - np.where(features[:, 2] >= 0.5, 0.0, 1e6)
+    gbdt_predictions = gbdt.predict(features)
+    mlp_predictions = mlp.predict(features)
     target = Path(output_path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump(ranker, target)
-    metrics = {"training_mse": mse, "num_rows": int(features.shape[0])}
+    mlp_target = target.with_name(target.stem + "-small-mlp" + target.suffix)
+    joblib.dump(gbdt, target)
+    joblib.dump(mlp, mlp_target)
+    metrics = {
+        "training_mse": float(np.mean((gbdt_predictions - labels) ** 2)),
+        "analytical_mse": float(np.mean((analytical - labels) ** 2)),
+        "gbdt_mse": float(np.mean((gbdt_predictions - labels) ** 2)),
+        "small_mlp_mse": float(np.mean((mlp_predictions - labels) ** 2)),
+        "num_rows": int(features.shape[0]),
+        "num_features": int(features.shape[1]),
+        "artifacts": {"gbdt": str(target), "small_mlp": str(mlp_target)},
+    }
     target.with_suffix(".metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     return {**manifest, "status": "completed", "metrics": metrics}
